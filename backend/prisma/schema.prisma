@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role{
+  CUSTOMER
+  AGENT
+  MERCHANT
+  ADMIN
+}
+
+enum KycStatus{
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AccountStatus{
+  ACTIVE
+  LOCKED
+  SUSPENDED
+}
+
+enum WalletType{
+  PERSONAL
+  AGENT
+  MERCHANT
+  SYSTEM
+}
+
+enum TransactionType{
+  SEND_MONEY
+  CASH_IN
+  CASH_OUT
+  PAYMENT
+  ADD_MONEY
+}
+
+enum TransactionStatus{
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum EntryType{
+  DEBIT
+  CREDIT
+}
+
+model User{
+  id  String  @id @default(uuid())  @db.Uuid
+  phone String  @unique
+  pin String
+
+  role Role @default(CUSTOMER)
+  kycStatus KycStatus @default(PENDING)
+  status  AccountStatus @default(ACTIVE)
+
+  nidNumber String? @unique
+  fullName  String?
+
+  createdAT DateTime  @default(now())
+  updatedAT DateTime  @updatedAt
+
+  wallet  Wallet?
+
+  @@map("users")
+}
+
+model Wallet{
+  id  String  @id @default(uuid())  @db.Uuid
+
+  userId  String? @unique
+  user  User?  @relation(fields: [userId],references: [id])
+
+  type  WalletType  @default(PERSONAL)
+  isActive  Boolean @default(true)
+
+  balance Int @default(0)
+  currency  String  @default("BD")
+
+  createdAT DateTime  @default(now())
+  updatedAT DateTime  @updatedAt
+
+  sentTransactions Transaction[]  @relation("OutGoingTransactions")
+  recivedTransactions Transaction[] @relation("IncomingTransactions")
+
+  ledgerEntries LedgerEntry[]
+
+  @@map("wallets")
+}
+
+model Transaction{
+  id  String  @id @default(uuid())  @db.Uuid
+  // The public readable Id
+  trxId String  @unique
+
+  type  TransactionType 
+  status  TransactionStatus @default(PENDING)
+
+  amount  Int
+  fee Int @default(0)
+  reference String?
+
+  // Relation 1: The Wallet sending the money
+  senderWalletId  String
+  senderWallet  Wallet  @relation("OutGoingTransactions",fields: [senderWalletId],references:[id])
+
+  // Relation 2: The Wallet receiving money
+  receiverWalletId  String
+  receiverWallet  Wallet @relation("IncomingTransactions",fields: [receiverWalletId],references: [id])
+
+  entries LedgerEntry[]
+
+  createdAT DateTime  @default(now())
+  updatedAT DateTime  @updatedAt
+
+  @@index([senderWalletId])
+  @@index([receiverWalletId])
+  @@map("transactions")
+}
+
+model LedgerEntry{
+  id  String  @id @default(uuid())  @db.Uuid
+
+  // Relation 1: Which transaction caused this movement?
+  transactionId String
+  transaction Transaction @relation(fields: [transactionId],references: [id])
+
+  // Relation 2: Which wallet this money entering/leaving?
+  walletId  String
+  wallet  Wallet  @relation(fields: [walletId],references: [id])
+
+  // The Math: Direction and Amount
+  type  EntryType
+  amount  Int
+
+  // The snapshot of wallet's balance after entry
+  balanceAfter  Int
+
+  description String?
+  createdAt DateTime  @default(now())
+
+  @@index([transactionId])
+  @@index([walletId])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
