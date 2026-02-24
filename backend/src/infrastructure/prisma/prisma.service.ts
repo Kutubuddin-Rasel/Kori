@@ -13,7 +13,7 @@ export class PrismaService
 
   constructor(private readonly configService: ConfigService) {
     const pool = new Pool({
-      connectionString: configService.getOrThrow<string>('DATABASE_URL'),
+      connectionString: configService.get<string>('DATABASE_URL'),
     });
     const adapter = new PrismaPg(pool);
     super({ adapter, log: ['warn', 'error'] });
