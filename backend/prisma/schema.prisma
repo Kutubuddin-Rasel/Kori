@@ -71,6 +71,7 @@ model User{
   updatedAT DateTime  @updatedAt
 
   wallet  Wallet?
+  trustDevices  TrustDevice[]
 
   @@map("users")
 }
@@ -111,11 +112,11 @@ model Transaction{
   reference String?
 
   // Relation 1: The Wallet sending the money
-  senderWalletId  String
+  senderWalletId  String  @db.Uuid
   senderWallet  Wallet  @relation("OutGoingTransactions",fields: [senderWalletId],references:[id])
 
   // Relation 2: The Wallet receiving money
-  receiverWalletId  String
+  receiverWalletId  String  @db.Uuid
   receiverWallet  Wallet @relation("IncomingTransactions",fields: [receiverWalletId],references: [id])
 
   entries LedgerEntry[]
@@ -132,11 +133,11 @@ model LedgerEntry{
   id  String  @id @default(uuid())  @db.Uuid
 
   // Relation 1: Which transaction caused this movement?
-  transactionId String
+  transactionId String  @db.Uuid
   transaction Transaction @relation(fields: [transactionId],references: [id])
 
   // Relation 2: Which wallet this money entering/leaving?
-  walletId  String
+  walletId  String  @db.Uuid
   wallet  Wallet  @relation(fields: [walletId],references: [id])
 
   // The Math: Direction and Amount
@@ -153,4 +154,19 @@ model LedgerEntry{
   @@index([walletId])
   @@index([createdAt])
   @@map("ledger_entries")
+}
+
+model TrustDevice{
+  id  String  @id @default(uuid())  @db.Uuid
+  deviceId  String  @unique
+
+  userId  String  @db.Uuid
+  user User @relation(fields: [userId],references: [id])
+  
+  isAuthorized  Boolean
+  lastUsedAt  DateTime  @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("trusted_devices")
 }
