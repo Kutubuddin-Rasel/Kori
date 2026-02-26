@@ -9,4 +9,8 @@ export class VerifyOtpDto {
   @IsString()
   @Length(4, 4, { message: 'Otp must be exactly 4 digits' })
   otp: string;
+
+  @IsNotEmpty()
+  @IsString()
+  deviceId: string;
 }
