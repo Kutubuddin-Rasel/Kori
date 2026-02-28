@@ -40,8 +40,20 @@ export class JwtRefreshStrategy extends PassportStrategy(
       },
     });
 
-    if (!trustDevice || !trustDevice.refreshTokenHash) {
-      throw new UnauthorizedException('This is not a authorized device');
+    if (!trustDevice) {
+      throw new UnauthorizedException('Unrecognized device');
+    }
+
+    if (!trustDevice.isAuthorized) {
+      throw new UnauthorizedException(
+        'Please device has been revoked. Please login again',
+      );
+    }
+
+    if (!trustDevice.refreshTokenHash) {
+      throw new UnauthorizedException(
+        'No active session found for this device',
+      );
     }
 
     const match = await this.passwordService.verify(
