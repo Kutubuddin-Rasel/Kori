@@ -6,7 +6,7 @@ import { CookieService } from '../services/cookie.service';
 import { JwtPayload } from 'src/modules/interfaces/jwt.interface';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { PasswordSerice } from '../services/password.service';
+import { PasswordService } from '../services/password.service';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
@@ -17,7 +17,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     private readonly configService: ConfigService,
     private readonly cookieService: CookieService,
     private readonly prisma: PrismaService,
-    private readonly passwordService: PasswordSerice,
+    private readonly passwordService: PasswordService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
