@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -17,7 +18,7 @@ import {
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { PasswordService } from './services/password.service';
-import { JwtPayload } from '../interfaces/jwt.interface';
+import { TokenPayload } from '../interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 
@@ -60,7 +61,7 @@ export class AuthService {
   }
 
   async verifyOtp(VerifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
-    const { phone, otp } = VerifyOtpDto;
+    const { phone, otp, deviceId } = VerifyOtpDto;
     const redisKey = `otp:${phone}`;
     const storedOtp = await this.redisService.get<string>(redisKey);
 
@@ -76,6 +77,12 @@ export class AuthService {
       where: { phone },
     });
     if (existingUser) {
+      await this.prisma.trustDevice.upsert({
+        where: { deviceId },
+        update: { createdAt: new Date(), isAuthorized: true },
+        create: { userId: existingUser.id, deviceId, isAuthorized: true },
+      });
+
       return {
         message: 'Otp verified. User already exists. Please login',
         isRegistered: true,
@@ -124,8 +131,6 @@ export class AuthService {
 
         const { accessToken, refreshToken } = await this.getTokens({
           sub: newUser.id,
-          deviceId,
-          phone,
           role: 'CUSTOMER',
         });
 
@@ -158,7 +163,39 @@ export class AuthService {
     }
   }
 
-  async getTokens(payload: JwtPayload): Promise<GetTokensResponse> {
+  async login(authCredentialDto: AuthCredentialsDto) {
+    const { phone, deviceId, pin } = authCredentialDto;
+
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      include: { trustDevices: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Invalid phone number');
+    }
+
+    const isPinValid = await this.passwordSerivce.verify(pin, user.pin);
+    if (!isPinValid) {
+      throw new UnauthorizedException('Invalid pin number');
+    }
+
+    if (user.status === 'ACTIVE') {
+      throw new UnauthorizedException(
+        `Account is currently ${user.status}. Please contact support`,
+      );
+    }
+
+    const isDeviceTrusted = user.trustDevices.some(
+      (device) => device.deviceId === deviceId,
+    );
+    if (!isDeviceTrusted) {
+      throw new ForbiddenException('UNRECOGNIZED_DEVICE');
+    }
+
+    return this.getTokens({ sub: user.id, role: user.role });
+  }
+
+  async getTokens(payload: TokenPayload): Promise<GetTokensResponse> {
     const accessToken = await this.jwtService.signAsync(
       { sub: payload.sub, role: payload.role },
       {

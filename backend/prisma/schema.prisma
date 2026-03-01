@@ -163,7 +163,7 @@ model TrustDevice{
   userId  String  @db.Uuid
   user User @relation(fields: [userId],references: [id])
   
-  refreshTokenHash  String
+  refreshTokenHash  String?
   isAuthorized  Boolean
   lastUsedAt  DateTime  @default(now())
   createdAt DateTime  @default(now())

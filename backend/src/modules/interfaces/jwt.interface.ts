@@ -7,6 +7,11 @@ export interface JwtPayload {
   deviceId: string;
 }
 
+export interface TokenPayload {
+  sub: string;
+  role: string;
+}
+
 export interface AuthCookie {
   refresh_token?: string;
 }
