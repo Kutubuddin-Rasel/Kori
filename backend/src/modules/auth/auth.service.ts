@@ -19,7 +19,7 @@ import {
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { PasswordService } from './services/password.service';
-import { JwtPayload } from '../interfaces/jwt.interface';
+import { RefreshTokenPayload } from '../interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 import { User } from 'generated/prisma/browser';
@@ -109,8 +109,8 @@ export class AuthService {
     };
   }
 
-  getPayload(user: User, deviceId: string): JwtPayload {
-    const payload: JwtPayload = {
+  getPayload(user: User, deviceId: string): RefreshTokenPayload {
+    const payload: RefreshTokenPayload = {
       sub: user.id,
       phone: user.phone,
       role: user.role,
@@ -247,7 +247,7 @@ export class AuthService {
     }
   }
 
-  async refreshTokens(payload: JwtPayload): Promise<TokensResponse> {
+  async refreshTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
     try {
       const tokens = await this.getTokens(payload);
       await this.updateRefreshToken(payload.deviceId, tokens.refreshToken);
@@ -264,7 +264,7 @@ export class AuthService {
     }
   }
 
-  async getTokens(payload: JwtPayload): Promise<TokensResponse> {
+  async getTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
     const accessToken = await this.jwtService.signAsync(
       { sub: payload.sub, role: payload.role },
       {

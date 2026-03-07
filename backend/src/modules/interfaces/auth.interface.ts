@@ -1,18 +1,18 @@
 export interface SendOtpResponse {
-  message: string;
-  expiresIn?: number;
+  readonly message: string;
+  readonly expiresIn?: number;
 }
 
 export interface VerifyOtpResponse {
-  message: string;
-  isRegistered: boolean;
+  readonly message: string;
+  readonly isRegistered: boolean;
 }
 
 export interface TokensResponse {
-  accessToken: string;
-  refreshToken: string;
+  readonly accessToken: string;
+  readonly refreshToken: string;
 }
 
 export interface TokenResponse {
-  accessToken: string;
+  readonly accessToken: string;
 }

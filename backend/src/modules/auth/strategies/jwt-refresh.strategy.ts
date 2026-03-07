@@ -3,7 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { CookieService } from '../services/cookie.service';
-import { JwtPayload } from 'src/modules/interfaces/jwt.interface';
+import { RefreshTokenPayload } from 'src/modules/interfaces/jwt.interface';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PasswordService } from '../services/password.service';
@@ -29,7 +29,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  async validate(req: Request, payload: JwtPayload): Promise<JwtPayload> {
+  async validate(req: Request, payload: RefreshTokenPayload): Promise<RefreshTokenPayload> {
     const refreshToken = this.cookieService.extractRefreshCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not found');

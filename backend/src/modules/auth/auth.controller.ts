@@ -20,7 +20,7 @@ import { CookieService } from './services/cookie.service';
 import type { Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import type { JwtPayload } from '../interfaces/jwt.interface';
+import type { RefreshTokenPayload } from '../interfaces/jwt.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -71,7 +71,7 @@ export class AuthController {
   @UseGuards(RefreshTokenGuard)
   @HttpCode(HttpStatus.OK)
   async refreshTokens(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: RefreshTokenPayload,
     @Res() res: Response,
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =

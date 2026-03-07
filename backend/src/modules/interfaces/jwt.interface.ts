@@ -1,17 +1,15 @@
 import { Role } from 'generated/prisma/enums';
 
-export interface JwtPayload {
-  sub: string;
-  phone: string;
-  role: Role;
-  deviceId: string;
+export interface RefreshTokenPayload extends AccessTokenPayload {
+  readonly phone: string;
+  readonly deviceId: string;
 }
 
 export interface AccessTokenPayload {
-  sub: string;
-  role: string;
+  readonly sub: string;
+  readonly role: Role;
 }
 
 export interface AuthCookie {
-  refresh_token?: string;
+  readonly refresh_token?: string;
 }

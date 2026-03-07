@@ -86,7 +86,8 @@ model Wallet{
   isActive  Boolean @default(true)
 
   balance Int @default(0)
-  currency  String  @default("BD")
+  currency  String  @default("BDT")
+  
 
   createdAT DateTime  @default(now())
   updatedAT DateTime  @updatedAt

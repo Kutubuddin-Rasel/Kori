@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role } from 'generated/prisma/enums';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { JwtPayload } from 'src/modules/interfaces/jwt.interface';
+import { RefreshTokenPayload } from 'src/modules/interfaces/jwt.interface';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -23,7 +23,7 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const { user } = context.switchToHttp().getRequest<{ user: JwtPayload }>();
+    const { user } = context.switchToHttp().getRequest<{ user: RefreshTokenPayload }>();
 
     if (!user) {
       throw new ForbiddenException(
