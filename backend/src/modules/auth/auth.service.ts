@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,16 +12,18 @@ import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import {
-  GetTokensResponse,
+  TokensResponse,
   SendOtpResponse,
   VerifyOtpResponse,
 } from '../interfaces/auth.interface';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { PasswordService } from './services/password.service';
-import { TokenPayload } from '../interfaces/jwt.interface';
+import { JwtPayload } from '../interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
+import { User } from 'generated/prisma/browser';
+import { Prisma } from 'generated/prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -32,6 +35,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwordSerivce: PasswordService,
     private readonly jwtService: JwtService,
+    private readonly logger = new Logger(AuthService.name),
   ) {
     this.OTP_TTL = configService.getOrThrow<number>('OTP_TIME_LIMIT');
     this.CLEARANCE_TTL = configService.getOrThrow<number>('CLEARANCE_TTL');
@@ -105,7 +109,19 @@ export class AuthService {
     };
   }
 
-  async register(authCredentialDto: AuthCredentialsDto) {
+  getPayload(user: User, deviceId: string): JwtPayload {
+    const payload: JwtPayload = {
+      sub: user.id,
+      phone: user.phone,
+      role: user.role,
+      deviceId,
+    };
+    return payload;
+  }
+
+  async register(
+    authCredentialDto: AuthCredentialsDto,
+  ): Promise<TokensResponse> {
     const { phone, pin, deviceId } = authCredentialDto;
 
     const clearanceKey = `register_clearance:${phone}`;
@@ -129,10 +145,9 @@ export class AuthService {
       const tokens = await this.prisma.$transaction(async (tx) => {
         const newUser = await tx.user.create({ data: { phone, pin: hashPin } });
 
-        const { accessToken, refreshToken } = await this.getTokens({
-          sub: newUser.id,
-          role: 'CUSTOMER',
-        });
+        const { accessToken, refreshToken } = await this.getTokens(
+          this.getPayload(newUser, deviceId),
+        );
 
         const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
 
@@ -163,7 +178,7 @@ export class AuthService {
     }
   }
 
-  async login(authCredentialDto: AuthCredentialsDto) {
+  async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
     const { phone, deviceId, pin } = authCredentialDto;
 
     const user = await this.prisma.user.findUnique({
@@ -191,11 +206,65 @@ export class AuthService {
     if (!isDeviceTrusted) {
       throw new ForbiddenException('UNRECOGNIZED_DEVICE');
     }
+    const tokens = await this.getTokens(this.getPayload(user, deviceId));
+    await this.updateRefreshToken(deviceId, tokens.refreshToken);
 
-    return this.getTokens({ sub: user.id, role: user.role });
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 
-  async getTokens(payload: TokenPayload): Promise<GetTokensResponse> {
+  async updateRefreshToken(
+    deviceId: string,
+    refreshToken: string,
+  ): Promise<void> {
+    try {
+      const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
+
+      await this.prisma.trustDevice.update({
+        where: { deviceId },
+        data: { refreshTokenHash },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to update refresh token',
+        error instanceof Error ? error.stack : error,
+      );
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        const primsmaRecordToUpdateNotFoundCode = 'P2025';
+        if (error.code === primsmaRecordToUpdateNotFoundCode) {
+          throw new UnauthorizedException(
+            'This device is not found in trust device',
+          );
+        }
+      }
+
+      throw new InternalServerErrorException(
+        'An error ocured while refreshing session',
+      );
+    }
+  }
+
+  async refreshTokens(payload: JwtPayload): Promise<TokensResponse> {
+    try {
+      const tokens = await this.getTokens(payload);
+      await this.updateRefreshToken(payload.deviceId, tokens.refreshToken);
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to refresh tokens',
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException('An error occured while refresh');
+    }
+  }
+
+  async getTokens(payload: JwtPayload): Promise<TokensResponse> {
     const accessToken = await this.jwtService.signAsync(
       { sub: payload.sub, role: payload.role },
       {
@@ -207,7 +276,12 @@ export class AuthService {
     );
 
     const refreshToken = await this.jwtService.signAsync(
-      { sub: payload.sub, role: payload.role },
+      {
+        sub: payload.sub,
+        phone: payload.phone,
+        role: payload.role,
+        deviceId: payload.deviceId,
+      },
       {
         secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
         expiresIn: this.configService.getOrThrow<StringValue>(

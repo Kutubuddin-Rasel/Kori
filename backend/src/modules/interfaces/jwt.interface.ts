@@ -7,7 +7,7 @@ export interface JwtPayload {
   deviceId: string;
 }
 
-export interface TokenPayload {
+export interface AccessTokenPayload {
   sub: string;
   role: string;
 }

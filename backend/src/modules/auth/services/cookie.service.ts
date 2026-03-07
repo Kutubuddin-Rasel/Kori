@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import ms from 'ms';
@@ -8,7 +12,10 @@ import { AuthCookie } from 'src/modules/interfaces/jwt.interface';
 @Injectable()
 export class CookieService {
   private readonly isProduction: boolean;
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly logger = new Logger(CookieService.name),
+  ) {
     this.isProduction =
       configService.getOrThrow<string>('NODE_ENV') === 'production';
   }
@@ -20,19 +27,39 @@ export class CookieService {
       'REFRESH_TOKEN_EXPIRY',
     );
 
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      sameSite,
-      secure,
-      maxAge: ms(expiry),
-      path: '/auth',
-    });
+    try {
+      res.cookie('refresh_token', refreshToken, {
+        httpOnly: true,
+        sameSite,
+        secure,
+        maxAge: ms(expiry),
+        path: '/auth',
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to set refresh token',
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException(
+        'An error occurred while establishing the session',
+      );
+    }
   }
 
   clearAuthCookies(res: Response) {
-    res.clearCookie('refresh_token', {
-      path: '/auth',
-    });
+    try {
+      res.clearCookie('refresh_token', {
+        path: '/auth',
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to clearing refresh token',
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException(
+        'An error occurred while clearing the session',
+      );
+    }
   }
 
   extractRefreshCookie(req: Request): string | null {

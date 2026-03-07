@@ -8,7 +8,11 @@ export interface VerifyOtpResponse {
   isRegistered: boolean;
 }
 
-export interface GetTokensResponse {
+export interface TokensResponse {
   accessToken: string;
   refreshToken: string;
+}
+
+export interface TokenResponse {
+  accessToken: string;
 }
