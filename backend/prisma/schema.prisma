@@ -88,7 +88,6 @@ model Wallet{
   balance Int @default(0)
   currency  String  @default("BDT")
   
-
   createdAT DateTime  @default(now())
   updatedAT DateTime  @updatedAt
 

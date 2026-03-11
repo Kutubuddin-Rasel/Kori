@@ -10,5 +10,5 @@ export interface BalanceResponse {
 
 export interface WalletOwnerResponse extends BalanceResponse {
   readonly userId: string | null;
-  readonly createdAt: Date;
+  readonly createdAT: Date;
 }
