@@ -20,7 +20,7 @@ export class CookieService {
       configService.getOrThrow<string>('NODE_ENV') === 'production';
   }
 
-  setAuthCookies(res: Response, refreshToken: string): void {
+  setRefreshCookies(res: Response, refreshToken: string): void {
     const secure = this.isProduction;
     const sameSite: 'strict' | 'lax' | 'none' = secure ? 'strict' : 'lax';
     const expiry = this.configService.getOrThrow<StringValue>(

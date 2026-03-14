@@ -23,7 +23,9 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const { user } = context.switchToHttp().getRequest<{ user: RefreshTokenPayload }>();
+    const { user } = context
+      .switchToHttp()
+      .getRequest<{ user: RefreshTokenPayload }>();
 
     if (!user) {
       throw new ForbiddenException(

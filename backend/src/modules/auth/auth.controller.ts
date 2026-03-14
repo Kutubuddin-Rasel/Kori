@@ -51,7 +51,7 @@ export class AuthController {
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
       await this.authService.register(authCredentialDto);
-    this.cookieService.setAuthCookies(res, refreshToken);
+    this.cookieService.setRefreshCookies(res, refreshToken);
     return { accessToken };
   }
 
@@ -63,7 +63,7 @@ export class AuthController {
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
       await this.authService.login(authCredentialDto);
-    this.cookieService.setAuthCookies(res, refreshToken);
+    this.cookieService.setRefreshCookies(res, refreshToken);
     return { accessToken };
   }
 
@@ -76,7 +76,7 @@ export class AuthController {
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
       await this.authService.refreshTokens(user);
-    this.cookieService.setAuthCookies(res, refreshToken);
+    this.cookieService.setRefreshCookies(res, refreshToken);
     return { accessToken };
   }
 }
