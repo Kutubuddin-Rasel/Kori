@@ -85,7 +85,7 @@ model Wallet{
   type  WalletType  @default(PERSONAL)
   isActive  Boolean @default(true)
 
-  balance Int @default(0)
+  balance BigInt @default(0)
   currency  String  @default("BDT")
   
   createdAT DateTime  @default(now())
@@ -107,7 +107,7 @@ model Transaction{
   type  TransactionType 
   status  TransactionStatus @default(PENDING)
 
-  amount  Int
+  amount  BigInt
   fee Int @default(0)
   reference String?
 
