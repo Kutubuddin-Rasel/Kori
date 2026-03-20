@@ -80,13 +80,16 @@ model Wallet{
   id  String  @id @default(uuid())  @db.Uuid
 
   userId  String? @unique @db.Uuid
-  user  User?  @relation(fields: [userId],references: [id])
+  user  User?  @relation(fields: [userId],references: [id], onDelete: Restrict)
 
   type  WalletType  @default(PERSONAL)
   isActive  Boolean @default(true)
 
   balance BigInt @default(0)
   currency  String  @default("BDT")
+
+  //Optimistic Concurrency Control check
+  version Int @default(1)
   
   createdAT DateTime  @default(now())
   updatedAT DateTime  @updatedAt
@@ -104,6 +107,9 @@ model Transaction{
   // The public readable Id
   trxId String  @unique
 
+  //Strict Idempotency. Client generate this UUID.
+  idempotencyKey  String  @unique @db.Uuid
+
   type  TransactionType 
   status  TransactionStatus @default(PENDING)
 
@@ -113,11 +119,11 @@ model Transaction{
 
   // Relation 1: The Wallet sending the money
   senderWalletId  String  @db.Uuid
-  senderWallet  Wallet  @relation("OutGoingTransactions",fields: [senderWalletId],references:[id])
+  senderWallet  Wallet  @relation("OutGoingTransactions",fields: [senderWalletId],references:[id],onDelete: Restrict)
 
   // Relation 2: The Wallet receiving money
   receiverWalletId  String  @db.Uuid
-  receiverWallet  Wallet @relation("IncomingTransactions",fields: [receiverWalletId],references: [id])
+  receiverWallet  Wallet @relation("IncomingTransactions",fields: [receiverWalletId],references: [id],onDelete: Restrict)
 
   entries LedgerEntry[]
 
@@ -126,6 +132,7 @@ model Transaction{
 
   @@index([senderWalletId])
   @@index([receiverWalletId])
+  @@index([idempotencyKey])
   @@map("transactions")
 }
 
@@ -134,7 +141,7 @@ model LedgerEntry{
 
   // Relation 1: Which transaction caused this movement?
   transactionId String  @db.Uuid
-  transaction Transaction @relation(fields: [transactionId],references: [id])
+  transaction Transaction @relation(fields: [transactionId],references: [id],onDelete: Restrict)
 
   // Relation 2: Which wallet this money entering/leaving?
   walletId  String  @db.Uuid
@@ -142,7 +149,7 @@ model LedgerEntry{
 
   // The Math: Direction and Amount
   type  EntryType
-  amount  Int
+  amount  BigInt
 
   // The snapshot of wallet's balance after entry
   balanceAfter  Int
@@ -150,9 +157,8 @@ model LedgerEntry{
   description String?
   createdAt DateTime  @default(now())
 
+  @@index([walletId,createdAt(sort: Desc)])
   @@index([transactionId])
-  @@index([walletId])
-  @@index([createdAt])
   @@map("ledger_entries")
 }
 
