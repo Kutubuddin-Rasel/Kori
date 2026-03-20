@@ -3,7 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { CookieService } from '../services/cookie.service';
-import { RefreshTokenPayload } from 'src/modules/interfaces/jwt.interface';
+import { RefreshTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { PasswordService } from '../services/password.service';

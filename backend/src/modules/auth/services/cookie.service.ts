@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import ms from 'ms';
 import { StringValue } from 'ms';
-import { AuthCookie } from 'src/modules/interfaces/jwt.interface';
+import { AuthCookie } from 'src/modules/auth/interfaces/jwt.interface';
 
 @Injectable()
 export class CookieService {

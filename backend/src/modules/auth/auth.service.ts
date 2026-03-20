@@ -15,11 +15,11 @@ import {
   TokensResponse,
   SendOtpResponse,
   VerifyOtpResponse,
-} from '../interfaces/auth.interface';
+} from './interfaces/auth.interface';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { PasswordService } from './services/password.service';
-import { RefreshTokenPayload } from '../interfaces/jwt.interface';
+import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 import { User } from 'generated/prisma/browser';

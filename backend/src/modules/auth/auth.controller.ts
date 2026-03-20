@@ -13,14 +13,14 @@ import {
   SendOtpResponse,
   TokenResponse,
   VerifyOtpResponse,
-} from '../interfaces/auth.interface';
+} from './interfaces/auth.interface';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { CookieService } from './services/cookie.service';
 import type { Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import type { RefreshTokenPayload } from '../interfaces/jwt.interface';
+import type { RefreshTokenPayload } from './interfaces/jwt.interface';
 
 @Controller('auth')
 export class AuthController {

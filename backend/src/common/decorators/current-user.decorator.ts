@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { RefreshTokenPayload } from 'src/modules/interfaces/jwt.interface';
+import { RefreshTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
 
 interface RequestWithUser extends RefreshTokenPayload {
   user: RefreshTokenPayload;
