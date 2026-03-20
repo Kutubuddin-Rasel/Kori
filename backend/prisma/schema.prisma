@@ -152,7 +152,7 @@ model LedgerEntry{
   amount  BigInt
 
   // The snapshot of wallet's balance after entry
-  balanceAfter  Int
+  balanceAfter  BigInt
 
   description String?
   createdAt DateTime  @default(now())

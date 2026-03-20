@@ -2,7 +2,7 @@ import { WalletType } from 'generated/prisma/enums';
 
 export interface BalanceResponse {
   readonly id: string;
-  readonly balance: number;
+  readonly balance: bigint;
   readonly type: WalletType;
   readonly currency: string;
   readonly isActive: boolean;

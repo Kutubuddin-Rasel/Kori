@@ -23,11 +23,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
 
 @Controller('wallets')
+@UseGuards(AccessTokenGuard)
 export class WalletsController {
   constructor(private readonly walletsService: WalletsService) {}
 
   @Get('my-balance')
-  @UseGuards(AccessTokenGuard)
   @HttpCode(HttpStatus.OK)
   async getMyBalance(
     @CurrentUser('sub') userId: string,
@@ -55,7 +55,7 @@ export class WalletsController {
     return this.walletsService.createSystemWallet(systemWalletDto);
   }
 
-  @Patch(':walletId/active')
+  @Patch(':walletId/activate')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
@@ -65,7 +65,7 @@ export class WalletsController {
     return this.walletsService.activeWallet(params.walletId);
   }
 
-  @Patch(':walletId/deactive')
+  @Patch(':walletId/deactivate')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
