@@ -265,30 +265,31 @@ export class AuthService {
   }
 
   async getTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
-    const accessToken = await this.jwtService.signAsync(
-      { sub: payload.sub, role: payload.role },
-      {
-        secret: this.configService.getOrThrow<string>('ACCESS_TOKEN_SECRET'),
-        expiresIn: this.configService.getOrThrow<StringValue>(
-          'ACCESS_TOKEN_EXPIRY',
-        ),
-      },
-    );
-
-    const refreshToken = await this.jwtService.signAsync(
-      {
-        sub: payload.sub,
-        phone: payload.phone,
-        role: payload.role,
-        deviceId: payload.deviceId,
-      },
-      {
-        secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
-        expiresIn: this.configService.getOrThrow<StringValue>(
-          'REFRESH_TOKEN_EXPIRY',
-        ),
-      },
-    );
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(
+        { sub: payload.sub, role: payload.role },
+        {
+          secret: this.configService.getOrThrow<string>('ACCESS_TOKEN_SECRET'),
+          expiresIn: this.configService.getOrThrow<StringValue>(
+            'ACCESS_TOKEN_EXPIRY',
+          ),
+        },
+      ),
+      this.jwtService.signAsync(
+        {
+          sub: payload.sub,
+          phone: payload.phone,
+          role: payload.role,
+          deviceId: payload.deviceId,
+        },
+        {
+          secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
+          expiresIn: this.configService.getOrThrow<StringValue>(
+            'REFRESH_TOKEN_EXPIRY',
+          ),
+        },
+      ),
+    ]);
     return {
       accessToken,
       refreshToken,

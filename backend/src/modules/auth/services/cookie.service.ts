@@ -6,7 +6,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import ms from 'ms';
-import { StringValue } from 'ms';
 import { AuthCookie } from 'src/modules/auth/interfaces/jwt.interface';
 
 @Injectable()
@@ -23,7 +22,7 @@ export class CookieService {
   setRefreshCookies(res: Response, refreshToken: string): void {
     const secure = this.isProduction;
     const sameSite: 'strict' | 'lax' | 'none' = secure ? 'strict' : 'lax';
-    const expiry = this.configService.getOrThrow<StringValue>(
+    const expiry = this.configService.getOrThrow<ms.StringValue>(
       'REFRESH_TOKEN_EXPIRY',
     );
 

@@ -7,6 +7,7 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WalletsModule } from './modules/wallets/wallets.module';
     RedisModule,
     AuthModule,
     WalletsModule,
+    TransactionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

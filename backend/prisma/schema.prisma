@@ -99,6 +99,7 @@ model Wallet{
 
   ledgerEntries LedgerEntry[]
 
+  @@index([type])
   @@map("wallets")
 }
 
@@ -114,7 +115,7 @@ model Transaction{
   status  TransactionStatus @default(PENDING)
 
   amount  BigInt
-  fee Int @default(0)
+  fee BigInt @default(0)
   reference String?
 
   // Relation 1: The Wallet sending the money

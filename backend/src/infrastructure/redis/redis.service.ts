@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { CacheOptions } from '../interfaces/redis.interface';
@@ -7,6 +12,8 @@ import { CacheOptions } from '../interfaces/redis.interface';
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
   private isConnected = false;
+  private readonly looger = new Logger(RedisService.name);
+
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
@@ -18,30 +25,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.redis.on('error', (error) => {
-        console.error('Redis connection error: ', error.message);
+        this.looger.error('Redis connection error: ', error.message);
         this.isConnected = false;
       });
 
       this.redis.on('connect', () => {
-        console.log('Redis connected successfully');
+        this.looger.log('Redis connected successfully');
         this.isConnected = true;
       });
 
       this.redis.on('ready', () => {
-        console.log('Redis ready for operations');
+        this.looger.log('Redis ready for operations');
         this.isConnected = true;
       });
 
       this.redis.on('reconnecting', () => {
-        console.log('Redis reconnecting ....');
+        this.looger.log('Redis reconnecting ....');
       });
 
       this.redis.on('end', () => {
-        console.log('Redis connection ended');
+        this.looger.log('Redis connection ended');
         this.isConnected = false;
       });
     } catch (error: unknown) {
-      console.error('Redis error: ', error);
+      this.looger.error('Redis error: ', error);
       this.isConnected = false;
     }
   }
@@ -49,13 +56,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     if (this.redis) {
       await this.redis.quit();
-      console.log('Redis disconnected');
+      this.looger.log('Redis disconnected');
     }
   }
 
   async get<T>(key: string): Promise<T | null> {
     if (!this.isConnected) {
-      console.warn('Redis is not connected');
+      this.looger.warn('Redis is not connected');
       return null;
     }
 
@@ -66,15 +73,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     try {
       return JSON.parse(data) as T;
-    } catch {
-      console.log('Error getting cache');
+    } catch (error) {
+      this.looger.error(
+        `Error getting Redis key:${key}`,
+        error instanceof Error ? error.stack : error,
+      );
       return null;
     }
   }
 
   async set<T>(key: string, value: T, options: CacheOptions): Promise<boolean> {
     if (!this.isConnected) {
-      console.warn('Redis is not connected');
+      this.looger.warn('Redis is not connected');
       return false;
     }
 
@@ -82,29 +92,40 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     let result: 'OK' | null;
 
     try {
-      if (options.ttl) {
-        result = await this.redis.setex(key, options.ttl, data);
+      if (options.ttl && options.nx) {
+        result = await this.redis.set(key, data, 'EX', options.ttl, 'NX');
+      } else if (options.ttl) {
+        result = await this.redis.set(key, data, 'EX', options.ttl);
+      } else if (options.nx) {
+        result = await this.redis.set(key, data, 'NX');
       } else {
         result = await this.redis.set(key, data);
       }
+
       return result === 'OK';
-    } catch {
-      console.warn('Error setting cache');
+    } catch (error) {
+      this.looger.error(
+        `Error setting Redis key:${key}`,
+        error instanceof Error ? error.stack : error,
+      );
       return false;
     }
   }
 
   async del(key: string): Promise<boolean> {
     if (!this.isConnected) {
-      console.warn('Redis is not connected');
+      this.looger.warn('Redis is not connected');
       return false;
     }
 
     try {
       const result = await this.redis.del(key);
       return result > 0;
-    } catch {
-      console.warn('Error deleting cache');
+    } catch (error) {
+      this.looger.error(
+        `Error deleting Redis key:${key}`,
+        error instanceof Error ? error.stack : error,
+      );
       return false;
     }
   }
