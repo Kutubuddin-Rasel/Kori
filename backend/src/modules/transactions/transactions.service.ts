@@ -20,6 +20,7 @@ import { generateTrxId } from 'src/common/utils/trx-generator.util';
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
   private readonly idempotency_TTL: ms.StringValue;
+  private readonly processing_TTL: ms.StringValue;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,9 +31,12 @@ export class TransactionsService {
     this.idempotency_TTL = configService.getOrThrow<ms.StringValue>(
       'IDEMPOTENCY_TTL_SECONDS',
     );
+    this.processing_TTL = configService.getOrThrow<ms.StringValue>(
+      'PROCESSING_TTL_SECONDS',
+    );
   }
 
-  async executeTransfer(
+  private async executeACIDTransfer(
     senderId: string,
     dto: InitiateTransactionDto,
   ): Promise<TransactionResultResponse> {
@@ -44,11 +48,11 @@ export class TransactionsService {
     const redisKey = `idempotency:trx:${idempotencyKey}`;
 
     //Fails if key is already exists.
-    const isFirstAttempt = await this.redisService.set(
-      redisKey,
-      idempotencyKey,
-      { ttl: ms(this.idempotency_TTL), nx: true },
-    );
+    //Short TTL to protect duplicate processing
+    const isFirstAttempt = await this.redisService.set(redisKey, 'PROCESSING', {
+      ttl: ms(this.processing_TTL) / 1000,
+      nx: true,
+    });
 
     if (!isFirstAttempt) {
       this.logger.warn(
@@ -105,7 +109,7 @@ export class TransactionsService {
         // -----------------------------------------------------------------
         // 1. DEADLOCK PREVENTION & PESSIMISTIC LOCKING
         // -----------------------------------------------------------------
-        const walletsToLock = [senderId, receiverId, senderWallet.id].sort();
+        const walletsToLock = [senderId, receiverId, systemWallet.id].sort();
 
         await tsx.$queryRaw(
           Prisma.sql`SELECT id FROM wallets WHERE id IN(${Prisma.join(walletsToLock)}) FOR NO KEY UPDATE`,
@@ -121,7 +125,7 @@ export class TransactionsService {
           where: { id: receiverId },
         });
         const lockedSystem = await tsx.wallet.findUnique({
-          where: { id: senderWallet.id },
+          where: { id: systemWallet.id },
         });
 
         if (!lockedSender || !lockedReceiver || !lockedSystem) {
@@ -232,6 +236,11 @@ export class TransactionsService {
           createdAt: transactionRecord.createdAT,
           newBalance: newSenderBalance.toString(),
         };
+      });
+
+      //A permanent 24-hour COMPLETED lock
+      await this.redisService.set(redisKey, result.trxId, {
+        ttl: ms(this.idempotency_TTL) / 1000,
       });
 
       return result;

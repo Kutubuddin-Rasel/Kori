@@ -29,7 +29,10 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  async validate(req: Request, payload: RefreshTokenPayload): Promise<RefreshTokenPayload> {
+  async validate(
+    req: Request,
+    payload: RefreshTokenPayload,
+  ): Promise<RefreshTokenPayload> {
     const refreshToken = this.cookieService.extractRefreshCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not found');
