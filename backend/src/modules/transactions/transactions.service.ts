@@ -4,20 +4,21 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { WalletsService } from '../wallets/wallets.service';
-import { InitiateTransactionDto } from './dto/initiate-transaction.dto';
 import { TransactionResultResponse } from './interfaces/transaction-interface';
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
 import { Prisma, TransactionType, WalletType } from 'generated/prisma/client';
 import { generateTrxId } from 'src/common/utils/trx-generator.util';
-import { SendMoneyDto } from './dto/sendMoney.dto';
+import { SendMoneyDto } from './dto/send-money.dto';
 
 @Injectable()
-export class TransactionsService {
+export class TransactionsService implements OnModuleInit {
   private readonly logger = new Logger(TransactionsService.name);
+  private cachedSystemWalletId: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -25,19 +26,34 @@ export class TransactionsService {
     private readonly walletsService: WalletsService,
   ) { }
 
+  async onModuleInit() {
+    try {
+      const systemWallet = await this.prisma.wallet.findFirst({
+        where: { type: 'SYSTEM' },
+        select: { id: true },
+      });
+      if (!systemWallet) {
+        throw new InternalServerErrorException('Critical System Revenue Wallet is missing from the database.')
+      }
+      this.cachedSystemWalletId = systemWallet.id;
+    } catch (error) {
+      this.logger.error('Failed to load system wallet', error);
+      throw error;
+    }
+  }
+
   public async sendMoney(senderId: string, dto: SendMoneyDto, idempotencyKey: string): Promise<TransactionResultResponse> {
     const { amount, receiverId, reference } = dto;
     if (senderId === receiverId) {
       throw new BadRequestException(`Can not do transaction to own account`);
     }
 
-    const [senderWallet, receiverWallet, systemWallet] = await Promise.all([
+    const [senderWallet, receiverWallet] = await Promise.all([
       this.walletsService.getWalletStateForTransaction(senderId),
       this.walletsService.getWalletStateForTransaction(receiverId),
-      this.prisma.wallet.findFirst({ where: { type: 'SYSTEM' }, select: { id: true } }),
     ])
 
-    if (!systemWallet) {
+    if (!this.cachedSystemWalletId) {
       throw new InternalServerErrorException('Critical System Revenue Wallet is missing from the database.')
     }
 
@@ -56,7 +72,7 @@ export class TransactionsService {
     return this.executeACIDTransfer(
       senderId,
       receiverId,
-      systemWallet.id,
+      this.cachedSystemWalletId,
       transferAmount,
       totalRequiredAmount,
       feeAmount,

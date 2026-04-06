@@ -1,6 +1,5 @@
 import { Controller, Post, Body, UseGuards, Req, UseInterceptors, Headers, BadRequestException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
-import { InitiateTransactionDto } from './dto/initiate-transaction.dto';
 import { TransactionResultResponse } from './interfaces/transaction-interface';
 import { IdempotencyInterceptor } from 'src/common/interceptors/idempotency.interceptor';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
