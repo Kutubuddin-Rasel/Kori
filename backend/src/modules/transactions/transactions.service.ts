@@ -18,6 +18,8 @@ import { Prisma, TransactionType, WalletType } from 'generated/prisma/client';
 import { generateTrxId } from 'src/common/utils/trx-generator.util';
 import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
+import { CashOutDto } from './dto/cash-out.dto';
+import { PaymentDto } from './dto/payment.dto';
 
 @Injectable()
 export class TransactionsService implements OnModuleInit {
@@ -28,7 +30,7 @@ export class TransactionsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly walletsService: WalletsService,
-  ) { }
+  ) {}
 
   async onModuleInit() {
     try {
@@ -106,8 +108,62 @@ export class TransactionsService implements OnModuleInit {
     );
   }
 
+  async cashOut(
+    userId: string,
+    dto: CashOutDto,
+    idempotencyKey: string,
+  ): Promise<TransactionResultResponse> {
+    const { amount, agentId, reference } = dto;
+    const math = await this.validateAndPrepareTransfer(
+      userId,
+      agentId,
+      amount,
+      TransactionType.CASH_OUT,
+      WalletType.PERSONAL,
+      WalletType.AGENT,
+    );
 
+    return this.executeACIDTransfer(
+      userId,
+      agentId,
+      this.cachedSystemWalletId,
+      math.transferAmount,
+      math.totalRequiredAmount,
+      math.feeAmount,
+      TransactionType.CASH_OUT,
+      idempotencyKey,
+      reference,
+    );
+  }
 
+  async payment(
+    userId: string,
+    dto: PaymentDto,
+    idempotencyKey: string,
+  ): Promise<TransactionResultResponse> {
+    const { amount, merchantId, invoiceNumber } = dto;
+
+    const math = await this.validateAndPrepareTransfer(
+      userId,
+      merchantId,
+      amount,
+      TransactionType.PAYMENT,
+      WalletType.PERSONAL,
+      WalletType.AGENT,
+    );
+
+    return this.executeACIDTransfer(
+      userId,
+      merchantId,
+      this.cachedSystemWalletId,
+      math.transferAmount,
+      math.totalRequiredAmount,
+      math.feeAmount,
+      TransactionType.PAYMENT,
+      idempotencyKey,
+      invoiceNumber,
+    );
+  }
 
   private async validateAndPrepareTransfer(
     senderId: string,
