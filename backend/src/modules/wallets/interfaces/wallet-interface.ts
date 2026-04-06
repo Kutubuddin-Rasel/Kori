@@ -12,3 +12,9 @@ export interface WalletOwnerResponse extends BalanceResponse {
   readonly userId: string | null;
   readonly createdAT: Date;
 }
+
+export interface WalletStateForTransaction {
+  readonly id: string;
+  readonly type: WalletType;
+  readonly balance: bigint;
+}

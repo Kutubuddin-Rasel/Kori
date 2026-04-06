@@ -10,6 +10,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import {
   BalanceResponse,
   WalletOwnerResponse,
+  WalletStateForTransaction,
 } from './interfaces/wallet-interface';
 import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
@@ -19,80 +20,113 @@ export class WalletsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger = new Logger(WalletsService.name),
-  ) {}
+  ) { }
 
   /*
     User-facing: Return the authenticated user's wallet balance.
    */
   async getMyBalance(userId: string): Promise<BalanceResponse> {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId },
-      select: {
-        id: true,
-        balance: true,
-        type: true,
-        isActive: true,
-        currency: true,
-      },
-    });
+    try {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          balance: true,
+          type: true,
+          isActive: true,
+          currency: true,
+        },
+      });
 
-    if (!wallet) {
-      throw new NotFoundException(
-        'No wallet found for this account. Contact Support',
+      if (!wallet) {
+        throw new NotFoundException(
+          'No wallet found for this account. Contact Support',
+        );
+      }
+      if (!wallet.isActive) {
+        throw new BadRequestException(
+          'Your wallet is currently frozen. Contact support.',
+        );
+      }
+      return wallet;
+    } catch (error) {
+      this.logger.error(
+        'Failed to get wallet by user ID',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException(
+        'An error ocured while getting wallet by user ID',
       );
     }
-    if (!wallet.isActive) {
-      throw new BadRequestException(
-        'Your wallet is currently frozen. Contact support.',
-      );
-    }
-    return wallet;
   }
 
   /*
     Cross-module Api: Transaction module call this to find a user's wallet before initiating money movement.
    */
   async getWalletByUserId(userId: string): Promise<BalanceResponse> {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId },
-      select: {
-        id: true,
-        balance: true,
-        type: true,
-        isActive: true,
-        currency: true,
-      },
-    });
+    try {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          balance: true,
+          type: true,
+          isActive: true,
+          currency: true,
+        },
+      });
 
-    if (!wallet) {
-      throw new NotFoundException(
-        'No wallet found for this account. Contact Support',
+      if (!wallet) {
+        throw new NotFoundException(
+          'No wallet found for this account. Contact Support',
+        );
+      }
+      return wallet;
+    } catch (error) {
+      this.logger.error(
+        'Failed to get wallet by user ID',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException(
+        'An error ocured while getting wallet by user ID',
       );
     }
-    return wallet;
   }
 
   /* 
     Admin-facing: Look up any wallet via it's own userId.
    */
   async getWalletById(walletId: string): Promise<WalletOwnerResponse> {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId },
-      select: {
-        id: true,
-        balance: true,
-        type: true,
-        isActive: true,
-        currency: true,
-        createdAT: true,
-        userId: true,
-      },
-    });
+    try {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { id: walletId },
+        select: {
+          id: true,
+          balance: true,
+          type: true,
+          isActive: true,
+          currency: true,
+          createdAT: true,
+          userId: true,
+        },
+      });
 
-    if (!wallet) {
-      throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+      if (!wallet) {
+        throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+      }
+      return wallet;
+    } catch (error) {
+      this.logger.error(
+        'Failed to get wallet by ID',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException(
+        'An error ocured while getting wallet by ID',
+      );
     }
-    return wallet;
   }
 
   /*
@@ -223,6 +257,41 @@ export class WalletsService {
 
       throw new InternalServerErrorException(
         'An error ocured while changing wallet status',
+      );
+    }
+  }
+
+  /**
+   * High-performance projection used strictly for pre-flight financial checks.
+   * Pulls only the bytes necessary from the database.
+   */
+  async getWalletStateForTransaction(walletId: string): Promise<WalletStateForTransaction> {
+    try {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: {
+          id: walletId,
+          isActive: true
+        },
+        select: {
+          id: true,
+          type: true,
+          balance: true,
+        }
+      })
+
+      if (!wallet) {
+        throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+      }
+
+      return wallet;
+    } catch (error) {
+      this.logger.error(
+        'Failed to get wallet state for transaction',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException(
+        'An error ocured while getting wallet state for transaction',
       );
     }
   }

@@ -10,9 +10,6 @@ import {
 import { TransactionType } from 'generated/prisma/enums';
 
 export class InitiateTransactionDto {
-  @IsUUID(4, { message: 'idempotencyKey must be a valid UUID v4.' })
-  @IsNotEmpty()
-  idempotencyKey: string;
 
   @IsUUID(4, { message: 'recieverId must be a valid UUID v4.' })
   @IsNotEmpty()
@@ -23,7 +20,7 @@ export class InitiateTransactionDto {
     { message: 'amount must be a positive integer without decimals.' },
   )
   @IsNotEmpty()
-  ammount: string;
+  amount: string;
 
   @IsEnum(TransactionType, {
     message: `type must be one of: ${Object.values(TransactionType).join(', ')}`,

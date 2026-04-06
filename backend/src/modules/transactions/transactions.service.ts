@@ -8,108 +8,85 @@ import {
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { WalletsService } from '../wallets/wallets.service';
-import { ConfigService } from '@nestjs/config';
-import ms from 'ms';
 import { InitiateTransactionDto } from './dto/initiate-transaction.dto';
 import { TransactionResultResponse } from './interfaces/transaction-interface';
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
-import { Prisma } from 'generated/prisma/client';
+import { Prisma, TransactionType, WalletType } from 'generated/prisma/client';
 import { generateTrxId } from 'src/common/utils/trx-generator.util';
+import { SendMoneyDto } from './dto/sendMoney.dto';
 
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
-  private readonly idempotency_TTL: ms.StringValue;
-  private readonly processing_TTL: ms.StringValue;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly walletsService: WalletsService,
-    private readonly configService: ConfigService,
-  ) {
-    this.idempotency_TTL = configService.getOrThrow<ms.StringValue>(
-      'IDEMPOTENCY_TTL_SECONDS',
-    );
-    this.processing_TTL = configService.getOrThrow<ms.StringValue>(
-      'PROCESSING_TTL_SECONDS',
+  ) { }
+
+  public async sendMoney(senderId: string, dto: SendMoneyDto, idempotencyKey: string): Promise<TransactionResultResponse> {
+    const { amount, receiverId, reference } = dto;
+    if (senderId === receiverId) {
+      throw new BadRequestException(`Can not do transaction to own account`);
+    }
+
+    const [senderWallet, receiverWallet, systemWallet] = await Promise.all([
+      this.walletsService.getWalletStateForTransaction(senderId),
+      this.walletsService.getWalletStateForTransaction(receiverId),
+      this.prisma.wallet.findFirst({ where: { type: 'SYSTEM' }, select: { id: true } }),
+    ])
+
+    if (!systemWallet) {
+      throw new InternalServerErrorException('Critical System Revenue Wallet is missing from the database.')
+    }
+
+    if (senderWallet.type != WalletType.PERSONAL || receiverWallet.type != WalletType.PERSONAL) {
+      throw new BadRequestException('Invalid wallet type. Only personal wallets are allowed for this transaction.')
+    }
+
+    const transferAmount = BigInt(amount);
+    const feeAmount = calculateFee(transferAmount, TransactionType.SEND_MONEY);
+    const totalRequiredAmount = transferAmount + feeAmount;
+
+    if (senderWallet.balance < totalRequiredAmount) {
+      throw new BadRequestException('Insufficient funds');
+    }
+
+    return this.executeACIDTransfer(
+      senderId,
+      receiverId,
+      systemWallet.id,
+      transferAmount,
+      totalRequiredAmount,
+      feeAmount,
+      TransactionType.SEND_MONEY,
+      idempotencyKey,
+      reference,
     );
   }
 
   private async executeACIDTransfer(
     senderId: string,
-    dto: InitiateTransactionDto,
+    receiverId: string,
+    systemWalletId: string,
+    transferAmount: bigint,
+    totalRequiredAmount: bigint,
+    feeAmount: bigint,
+    type: TransactionType,
+    idempotencyKey: string,
+    reference?: string,
   ): Promise<TransactionResultResponse> {
-    const { idempotencyKey, ammount, receiverId, type, reference } = dto;
 
     //==========================================================
-    // ATOMIC IDEMPOTECNY CHECK (REDIS)
+    // THE PIRSMA TRANSACTION (THE ACID BLOCK)
     //==========================================================
-    const redisKey = `idempotency:trx:${idempotencyKey}`;
-
-    //Fails if key is already exists.
-    //Short TTL to protect duplicate processing
-    const isFirstAttempt = await this.redisService.set(redisKey, 'PROCESSING', {
-      ttl: ms(this.processing_TTL) / 1000,
-      nx: true,
-    });
-
-    if (!isFirstAttempt) {
-      this.logger.warn(
-        `Duplicate transaction intent blocked:${idempotencyKey}`,
-      );
-      throw new ConflictException(
-        'This transaction is already procession or completed',
-      );
-    }
-
-    //==========================================================
-    // BUSINESS LOGIC & STATE VALIDATION
-    //==========================================================
-    if (senderId === receiverId) {
-      await this.redisService.del(redisKey);
-      throw new BadRequestException(`Can not do transaction to own account`);
-    }
-
     try {
-      const [senderWallet, receiverWallet] = await Promise.all([
-        this.walletsService.getWalletById(senderId),
-        this.walletsService.getWalletById(receiverId),
-      ]);
-
-      if (!senderWallet || !receiverWallet) {
-        throw new BadRequestException('One of the wallet is frozen');
-      }
-
-      const systemWallet = await this.prisma.wallet.findFirst({
-        where: { type: 'SYSTEM' },
-      });
-      if (!systemWallet) {
-        throw new InternalServerErrorException(
-          'Critical: System Revenue wallet is missing',
-        );
-      }
-
-      //==========================================================
-      // MATH VALIDATION
-      //==========================================================
-      const transferAmount = BigInt(ammount);
-      const feeAmount = calculateFee(transferAmount, type);
-      const totalRequiredAmount = transferAmount + feeAmount;
-
-      if (senderWallet.balance < totalRequiredAmount) {
-        throw new BadRequestException('Insufficient funds');
-      }
-
-      //==========================================================
-      // THE PIRSMA TRANSACTION (THE ACID BLOCK)
-      //==========================================================
-
       const result = await this.prisma.$transaction(async (tsx) => {
         // -----------------------------------------------------------------
         // 1. DEADLOCK PREVENTION & PESSIMISTIC LOCKING
         // -----------------------------------------------------------------
-        const walletsToLock = [senderId, receiverId, systemWallet.id].sort();
+        const walletsToLock = [senderId, receiverId, systemWalletId].sort();
 
         await tsx.$queryRaw(
           Prisma.sql`SELECT id FROM wallets WHERE id IN(${Prisma.join(walletsToLock)}) FOR NO KEY UPDATE`,
@@ -125,7 +102,7 @@ export class TransactionsService {
           where: { id: receiverId },
         });
         const lockedSystem = await tsx.wallet.findUnique({
-          where: { id: systemWallet.id },
+          where: { id: systemWalletId },
         });
 
         if (!lockedSender || !lockedReceiver || !lockedSystem) {
@@ -139,14 +116,7 @@ export class TransactionsService {
         }
 
         // -----------------------------------------------------------------
-        // 3. THE MATMETICAL MUTATIONS
-        // -----------------------------------------------------------------
-        const newSenderBalance = lockedSender.balance - totalRequiredAmount;
-        const newReceiverBalance = lockedReceiver.balance + transferAmount;
-        const newSystemBalance = lockedSystem.balance + feeAmount;
-
-        // -----------------------------------------------------------------
-        // 4. WRITE IN THE TRANSACTION TABLE
+        // 3. WRITE IN THE TRANSACTION TABLE
         // -----------------------------------------------------------------
         const trxId = generateTrxId();
         const transactionRecord = await tsx.transaction.create({
@@ -164,68 +134,62 @@ export class TransactionsService {
         });
 
         // -----------------------------------------------------------------
-        // 5. DOUBLE-ENTRY LEDGER & WALLET UPDATES
+        // 4. DOUBLE-ENTRY LEDGER & WALLET UPDATES
         // -----------------------------------------------------------------
-        await Promise.all([
-          tsx.wallet.update({
-            where: { id: senderId },
-            data: { balance: newSenderBalance },
-          }),
 
-          tsx.wallet.update({
-            where: { id: receiverId },
-            data: { balance: newReceiverBalance },
-          }),
+        // Update Sender (Atomic Decrement)
+        const updatedSender = await tsx.wallet.update({
+          where: { id: senderId },
+          data: { balance: { decrement: totalRequiredAmount } }
+        })
 
-          ...(feeAmount > 0n
-            ? [
-                tsx.wallet.update({
-                  where: { id: systemWallet.id },
-                  data: { balance: newSystemBalance },
-                }),
-              ]
-            : []),
+        await tsx.ledgerEntry.create({
+          data: {
+            transactionId: transactionRecord.id,
+            walletId: senderId,
+            type: 'DEBIT',
+            amount: totalRequiredAmount,
+            balanceAfter: updatedSender.balance,
+            description: `Sent Money to ${receiverId}`,
+          }
+        })
 
-          //Entry 1: Sender
-          tsx.ledgerEntry.create({
+        // Update Receiver (Atomic increment)
+        const updatedReceiver = await tsx.wallet.update({
+          where: { id: receiverId },
+          data: { balance: { increment: transferAmount } }
+        })
+
+        await tsx.ledgerEntry.create({
+          data: {
+            transactionId: transactionRecord.id,
+            walletId: receiverId,
+            type: 'CREDIT',
+            amount: transferAmount,
+            balanceAfter: updatedReceiver.balance,
+            description: `Money received from ${senderId}`,
+          }
+        })
+
+        // TODO (Performance) : Extract System Wallet update to a batched async chronometer to prevent Hot Row connection at extreme scale
+        // Update System Revenue (If Fee exists)
+        if (feeAmount > 0n) {
+          const updatedSystem = await tsx.wallet.update({
+            where: { id: systemWalletId },
+            data: { balance: { increment: feeAmount } }
+          })
+
+          await tsx.ledgerEntry.create({
             data: {
               transactionId: transactionRecord.id,
-              walletId: senderId,
-              type: 'DEBIT',
-              amount: totalRequiredAmount,
-              balanceAfter: newSenderBalance,
-              description: `Sent Money to ${receiverId}`,
-            },
-          }),
-
-          //Entry 2: Receiver
-          tsx.ledgerEntry.create({
-            data: {
-              transactionId: transactionRecord.id,
-              walletId: receiverId,
+              walletId: systemWalletId,
               type: 'CREDIT',
-              amount: transferAmount,
-              balanceAfter: newReceiverBalance,
-              description: `Money received from ${senderId}`,
-            },
-          }),
-
-          //Entry 3: System
-          ...(feeAmount > 0n
-            ? [
-                tsx.ledgerEntry.create({
-                  data: {
-                    transactionId: transactionRecord.id,
-                    walletId: systemWallet.id,
-                    type: 'CREDIT',
-                    amount: feeAmount,
-                    balanceAfter: newSystemBalance,
-                    description: `Fee collection for TRX ${transactionRecord.trxId}`,
-                  },
-                }),
-              ]
-            : []),
-        ]);
+              amount: feeAmount,
+              balanceAfter: updatedSystem.balance,
+              description: `Fee collection for TRX ${transactionRecord.trxId}`,
+            }
+          })
+        }
 
         return {
           trxId: transactionRecord.trxId,
@@ -234,18 +198,18 @@ export class TransactionsService {
           fee: feeAmount.toString(),
           status: transactionRecord.status,
           createdAt: transactionRecord.createdAT,
-          newBalance: newSenderBalance.toString(),
+          newBalance: updatedSender.balance.toString(),
         };
-      });
-
-      //A permanent 24-hour COMPLETED lock
-      await this.redisService.set(redisKey, result.trxId, {
-        ttl: ms(this.idempotency_TTL) / 1000,
       });
 
       return result;
     } catch (error) {
-      await this.redisService.del(redisKey);
+
+      // Prisma P2002 = Unique Constraint Voilation
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('This Transaction was already securely possesed by the database');
+      }
+
       throw error;
     }
   }
