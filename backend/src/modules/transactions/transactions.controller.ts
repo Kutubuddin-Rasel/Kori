@@ -13,11 +13,14 @@ import { IdempotencyInterceptor } from 'src/common/interceptors/idempotency.inte
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard';
 import { SendMoneyDto } from './dto/send-money.dto';
+import { CashInDto } from './dto/cash-in.dto';
+import { CashOutDto } from './dto/cash-out.dto';
+import { PaymentDto } from './dto/payment.dto';
 
 @Controller('transactions')
 @UseInterceptors(IdempotencyInterceptor)
 export class TransactionsController {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(private readonly transactionsService: TransactionsService) { }
 
   @Post('send')
   @UseGuards(AccessTokenGuard)
@@ -32,5 +35,50 @@ export class TransactionsController {
       );
     }
     return this.transactionsService.sendMoney(userId, dto, idempotencyKey);
+  }
+
+  @Post('cash-in')
+  @UseGuards(AccessTokenGuard)
+  async cashIn(
+    @CurrentUser('sub') agentId: string,
+    @Headers('x-idempotency-key') idempotencyKey: string,
+    @Body() dto: CashInDto,
+  ): Promise<TransactionResultResponse> {
+    if (!idempotencyKey) {
+      throw new BadRequestException(
+        'x-idempotency-key header is absolutely required',
+      );
+    }
+    return this.transactionsService.cashIn(agentId, dto, idempotencyKey);
+  }
+
+  @Post('cash-out')
+  @UseGuards(AccessTokenGuard)
+  async cashOut(
+    @CurrentUser('sub') userId: string,
+    @Headers('x-idempotency-key') idempotencyKey: string,
+    @Body() dto: CashOutDto,
+  ): Promise<TransactionResultResponse> {
+    if (!idempotencyKey) {
+      throw new BadRequestException(
+        'x-idempotency-key header is absolutely required',
+      );
+    }
+    return this.transactionsService.cashOut(userId, dto, idempotencyKey);
+  }
+
+  @Post('payment')
+  @UseGuards(AccessTokenGuard)
+  async payment(
+    @CurrentUser('sub') userId: string,
+    @Headers('x-idempotency-key') idempotencyKey: string,
+    @Body() dto: PaymentDto,
+  ): Promise<TransactionResultResponse> {
+    if (!idempotencyKey) {
+      throw new BadRequestException(
+        'x-idempotency-key header is absolutely required',
+      );
+    }
+    return this.transactionsService.payment(userId, dto, idempotencyKey);
   }
 }
