@@ -20,6 +20,7 @@ import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
+import { AddMoneyDto } from './dto/add-money.dto';
 
 @Injectable()
 export class TransactionsService implements OnModuleInit {
@@ -141,7 +142,7 @@ export class TransactionsService implements OnModuleInit {
     dto: PaymentDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, merchantId, invoiceNumber } = dto;
+    const { amount, merchantId, invoiceNumber, reference } = dto;
 
     const math = await this.validateAndPrepareTransfer(
       userId,
@@ -149,7 +150,7 @@ export class TransactionsService implements OnModuleInit {
       amount,
       TransactionType.PAYMENT,
       WalletType.PERSONAL,
-      WalletType.AGENT,
+      WalletType.MERCHANT,
     );
 
     return this.executeACIDTransfer(
@@ -161,7 +162,44 @@ export class TransactionsService implements OnModuleInit {
       math.feeAmount,
       TransactionType.PAYMENT,
       idempotencyKey,
-      invoiceNumber,
+      reference || invoiceNumber,
+    );
+  }
+
+  /*
+  * Strict Rule : The Sender is the System Wallet. The Receiver must be personal
+  * TODO (Architectural Roadmap):
+    1. This endpoint should eventually be converted to a Weebhook Receiver from Payment Gateway
+    2. It should only be triggerd by external providers (e.g. Stripe, SSLCommerz, etc)
+    3. Integrate a Velocity/Limits module here to enforce Daily/Monthly AML(Anti-Money Laundering) constraints
+    4. The Idempotency key must map directly to the Bank's external EventID to prevent duplicate transactions
+  */
+  async addMoney(
+    userId: string,
+    dto: AddMoneyDto,
+    idempotencyKey: string,
+  ): Promise<TransactionResultResponse> {
+    const { amount, bankGatewayToken, reference } = dto;
+
+    const math = await this.validateAndPrepareTransfer(
+      this.cachedSystemWalletId,
+      userId,
+      amount,
+      TransactionType.ADD_MONEY,
+      WalletType.SYSTEM,
+      WalletType.PERSONAL,
+    );
+
+    return this.executeACIDTransfer(
+      this.cachedSystemWalletId,
+      userId,
+      this.cachedSystemWalletId,
+      math.transferAmount,
+      math.totalRequiredAmount,
+      math.feeAmount,
+      TransactionType.ADD_MONEY,
+      idempotencyKey,
+      reference || bankGatewayToken,
     );
   }
 

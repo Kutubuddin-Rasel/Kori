@@ -16,11 +16,12 @@ import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
+import { AddMoneyDto } from './dto/add-money.dto';
 
 @Controller('transactions')
 @UseInterceptors(IdempotencyInterceptor)
 export class TransactionsController {
-  constructor(private readonly transactionsService: TransactionsService) { }
+  constructor(private readonly transactionsService: TransactionsService) {}
 
   @Post('send')
   @UseGuards(AccessTokenGuard)
@@ -80,5 +81,20 @@ export class TransactionsController {
       );
     }
     return this.transactionsService.payment(userId, dto, idempotencyKey);
+  }
+
+  @Post('add-money')
+  @UseGuards(AccessTokenGuard)
+  async addMoney(
+    @CurrentUser('sub') userId: string,
+    @Headers('x-idempotency-key') idempotencyKey: string,
+    @Body() dto: AddMoneyDto,
+  ): Promise<TransactionResultResponse> {
+    if (!idempotencyKey) {
+      throw new BadRequestException(
+        'x-idempotency-key header is absolutely required',
+      );
+    }
+    return this.transactionsService.addMoney(userId, dto, idempotencyKey);
   }
 }
