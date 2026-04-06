@@ -44,27 +44,33 @@ export class TransactionsService implements OnModuleInit {
 
   public async sendMoney(senderId: string, dto: SendMoneyDto, idempotencyKey: string): Promise<TransactionResultResponse> {
     const { amount, receiverId, reference } = dto;
+
     if (senderId === receiverId) {
       throw new BadRequestException(`Can not do transaction to own account`);
     }
 
+    // Fetch wallets state
     const [senderWallet, receiverWallet] = await Promise.all([
       this.walletsService.getWalletStateForTransaction(senderId),
       this.walletsService.getWalletStateForTransaction(receiverId),
     ])
 
+    // Check if system wallet is available
     if (!this.cachedSystemWalletId) {
       throw new InternalServerErrorException('Critical System Revenue Wallet is missing from the database.')
     }
 
-    if (senderWallet.type != WalletType.PERSONAL || receiverWallet.type != WalletType.PERSONAL) {
+    // Check if wallets are personal
+    if (senderWallet.type !== WalletType.PERSONAL || receiverWallet.type !== WalletType.PERSONAL) {
       throw new BadRequestException('Invalid wallet type. Only personal wallets are allowed for this transaction.')
     }
 
+    // Calculate fee and total required amount
     const transferAmount = BigInt(amount);
     const feeAmount = calculateFee(transferAmount, TransactionType.SEND_MONEY);
     const totalRequiredAmount = transferAmount + feeAmount;
 
+    // Check if sender has sufficient funds
     if (senderWallet.balance < totalRequiredAmount) {
       throw new BadRequestException('Insufficient funds');
     }
