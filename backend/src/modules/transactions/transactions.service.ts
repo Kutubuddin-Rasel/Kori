@@ -21,6 +21,7 @@ import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { AddMoneyDto } from './dto/add-money.dto';
+import { DynamicLedgerDescripton } from 'src/common/utils/dynamic-ledger-description.util';
 
 @Injectable()
 export class TransactionsService implements OnModuleInit {
@@ -329,6 +330,12 @@ export class TransactionsService implements OnModuleInit {
         // -----------------------------------------------------------------
         // 4. DOUBLE-ENTRY LEDGER & WALLET UPDATES
         // -----------------------------------------------------------------
+        // Get dynamic ledger description
+        const { debitDescription, creditDescription } = DynamicLedgerDescripton(
+          type,
+          senderId,
+          receiverId,
+        );
 
         // Update Sender (Atomic Decrement)
         const updatedSender = await tsx.wallet.update({
@@ -343,7 +350,7 @@ export class TransactionsService implements OnModuleInit {
             type: 'DEBIT',
             amount: totalRequiredAmount,
             balanceAfter: updatedSender.balance,
-            description: `Sent Money to ${receiverId}`,
+            description: debitDescription,
           },
         });
 
@@ -360,7 +367,7 @@ export class TransactionsService implements OnModuleInit {
             type: 'CREDIT',
             amount: transferAmount,
             balanceAfter: updatedReceiver.balance,
-            description: `Money received from ${senderId}`,
+            description: creditDescription,
           },
         });
 
@@ -391,7 +398,10 @@ export class TransactionsService implements OnModuleInit {
           fee: feeAmount.toString(),
           status: transactionRecord.status,
           createdAt: transactionRecord.createdAT,
-          newBalance: updatedSender.balance.toString(),
+          newBalance:
+            senderId === this.cachedSystemWalletId
+              ? updatedReceiver.balance.toString()
+              : updatedSender.balance.toString(),
         };
       });
 

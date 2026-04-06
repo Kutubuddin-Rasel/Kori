@@ -5,7 +5,6 @@ import {
   UseGuards,
   UseInterceptors,
   Headers,
-  BadRequestException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { TransactionResultResponse } from './interfaces/transaction-response.interface';
@@ -30,11 +29,6 @@ export class TransactionsController {
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: SendMoneyDto,
   ): Promise<TransactionResultResponse> {
-    if (!idempotencyKey) {
-      throw new BadRequestException(
-        'x-idempotency-key header is absolutely required',
-      );
-    }
     return this.transactionsService.sendMoney(userId, dto, idempotencyKey);
   }
 
@@ -45,11 +39,6 @@ export class TransactionsController {
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: CashInDto,
   ): Promise<TransactionResultResponse> {
-    if (!idempotencyKey) {
-      throw new BadRequestException(
-        'x-idempotency-key header is absolutely required',
-      );
-    }
     return this.transactionsService.cashIn(agentId, dto, idempotencyKey);
   }
 
@@ -60,11 +49,6 @@ export class TransactionsController {
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: CashOutDto,
   ): Promise<TransactionResultResponse> {
-    if (!idempotencyKey) {
-      throw new BadRequestException(
-        'x-idempotency-key header is absolutely required',
-      );
-    }
     return this.transactionsService.cashOut(userId, dto, idempotencyKey);
   }
 
@@ -75,11 +59,6 @@ export class TransactionsController {
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: PaymentDto,
   ): Promise<TransactionResultResponse> {
-    if (!idempotencyKey) {
-      throw new BadRequestException(
-        'x-idempotency-key header is absolutely required',
-      );
-    }
     return this.transactionsService.payment(userId, dto, idempotencyKey);
   }
 
@@ -90,11 +69,6 @@ export class TransactionsController {
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: AddMoneyDto,
   ): Promise<TransactionResultResponse> {
-    if (!idempotencyKey) {
-      throw new BadRequestException(
-        'x-idempotency-key header is absolutely required',
-      );
-    }
     return this.transactionsService.addMoney(userId, dto, idempotencyKey);
   }
 }
