@@ -20,7 +20,7 @@ export class WalletsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger = new Logger(WalletsService.name),
-  ) { }
+  ) {}
 
   /*
     User-facing: Return the authenticated user's wallet balance.
@@ -114,7 +114,9 @@ export class WalletsService {
       });
 
       if (!wallet) {
-        throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+        throw new NotFoundException(
+          `Wallet with ID:${walletId} does not exist.`,
+        );
       }
       return wallet;
     } catch (error) {
@@ -265,22 +267,26 @@ export class WalletsService {
    * High-performance projection used strictly for pre-flight financial checks.
    * Pulls only the bytes necessary from the database.
    */
-  async getWalletStateForTransaction(walletId: string): Promise<WalletStateForTransaction> {
+  async getWalletStateForTransaction(
+    walletId: string,
+  ): Promise<WalletStateForTransaction> {
     try {
       const wallet = await this.prisma.wallet.findUnique({
         where: {
           id: walletId,
-          isActive: true
+          isActive: true,
         },
         select: {
           id: true,
           type: true,
           balance: true,
-        }
-      })
+        },
+      });
 
       if (!wallet) {
-        throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+        throw new NotFoundException(
+          `Wallet with ID:${walletId} does not exist.`,
+        );
       }
 
       return wallet;

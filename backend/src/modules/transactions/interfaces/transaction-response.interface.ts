@@ -9,3 +9,9 @@ export interface TransactionResultResponse {
   readonly createdAt: Date;
   readonly newBalance: string;
 }
+
+export interface TransactionValidationResponse {
+  readonly transferAmount: bigint;
+  readonly feeAmount: bigint;
+  readonly totalRequiredAmount: bigint;
+}

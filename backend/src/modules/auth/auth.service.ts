@@ -109,7 +109,7 @@ export class AuthService {
     };
   }
 
-  getPayload(user: User, deviceId: string): RefreshTokenPayload {
+  private getPayload(user: User, deviceId: string): RefreshTokenPayload {
     const payload: RefreshTokenPayload = {
       sub: user.id,
       phone: user.phone,
@@ -215,7 +215,7 @@ export class AuthService {
     };
   }
 
-  async updateRefreshToken(
+  private async updateRefreshToken(
     deviceId: string,
     refreshToken: string,
   ): Promise<void> {
@@ -264,7 +264,9 @@ export class AuthService {
     }
   }
 
-  async getTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
+  private async getTokens(
+    payload: RefreshTokenPayload,
+  ): Promise<TokensResponse> {
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(
         { sub: payload.sub, role: payload.role },
