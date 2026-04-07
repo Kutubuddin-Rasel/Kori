@@ -13,7 +13,11 @@ import {
   WalletStateForTransaction,
 } from './interfaces/wallet-interface';
 import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
+import {
+  DefaultArgs,
+  PrismaClientKnownRequestError,
+} from '@prisma/client/runtime/client';
+import { PrismaClient } from 'generated/prisma/client';
 
 @Injectable()
 export class WalletsService {
@@ -93,6 +97,22 @@ export class WalletsService {
         'An error ocured while getting wallet by user ID',
       );
     }
+  }
+
+  /*
+  Internal API : Create a Personal Wallet during Registration
+  Accepts a Prisma Transaction Context to maintain cross-module ACID guarantees
+  */
+  async createPersonalWallet(
+    tx: Omit<
+      PrismaClient<never, undefined, DefaultArgs>,
+      '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
+    >,
+    userId: string,
+  ): Promise<void> {
+    await tx.wallet.create({
+      data: { userId, type: 'PERSONAL', balance: 0n },
+    });
   }
 
   /* 

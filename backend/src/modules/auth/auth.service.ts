@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -9,13 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
-import { SendOtpDto } from './dto/send-otp.dto';
-import { VerifyOtpDto } from './dto/verify-otp.dto';
-import {
-  TokensResponse,
-  SendOtpResponse,
-  VerifyOtpResponse,
-} from './interfaces/auth.interface';
+import { TokensResponse } from './interfaces/auth.interface';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { PasswordService } from './services/password.service';
@@ -24,91 +17,21 @@ import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 import { User } from 'generated/prisma/browser';
 import { Prisma } from 'generated/prisma/client';
+import { WalletsService } from '../wallets/wallets.service';
 
 @Injectable()
 export class AuthService {
-  private OTP_TTL: number;
-  private CLEARANCE_TTL: number;
   constructor(
+    private readonly walletsService: WalletsService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
     private readonly passwordSerivce: PasswordService,
     private readonly jwtService: JwtService,
     private readonly logger = new Logger(AuthService.name),
-  ) {
-    this.OTP_TTL = configService.getOrThrow<number>('OTP_TIME_LIMIT');
-    this.CLEARANCE_TTL = configService.getOrThrow<number>('CLEARANCE_TTL');
-  }
+  ) {}
 
-  async sendOtp(sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
-    const { phone } = sendOtpDto;
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const redisKey = `otp:${phone}`;
-
-    const result = await this.redisService.set<string>(redisKey, otp, {
-      ttl: this.OTP_TTL,
-    });
-
-    if (!result) {
-      throw new InternalServerErrorException(
-        'Server error for setting otp cache',
-      );
-    }
-
-    console.log(`[DEVELOPMENT ONLY] OTP for ${phone} is: ${otp}`);
-    return {
-      message: 'OTP sent successfully. It will expire in 3 minutes.',
-      expiresIn: this.OTP_TTL,
-    };
-  }
-
-  async verifyOtp(VerifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
-    const { phone, otp, deviceId } = VerifyOtpDto;
-    const redisKey = `otp:${phone}`;
-    const storedOtp = await this.redisService.get<string>(redisKey);
-
-    if (!storedOtp) {
-      throw new BadRequestException('Otp expired or was never sent');
-    }
-    if (storedOtp != otp) {
-      throw new BadRequestException('Invalid OTP');
-    }
-    await this.redisService.del(redisKey);
-
-    const existingUser = await this.prisma.user.findUnique({
-      where: { phone },
-    });
-    if (existingUser) {
-      await this.prisma.trustDevice.upsert({
-        where: { deviceId },
-        update: { createdAt: new Date(), isAuthorized: true },
-        create: { userId: existingUser.id, deviceId, isAuthorized: true },
-      });
-
-      return {
-        message: 'Otp verified. User already exists. Please login',
-        isRegistered: true,
-      };
-    }
-
-    const clearanceKey = `register_clearance:${phone}`;
-    const result = await this.redisService.set(clearanceKey, 'GRANTED', {
-      ttl: this.CLEARANCE_TTL,
-    });
-    if (!result) {
-      throw new InternalServerErrorException(
-        'Server error for setting clearnace key',
-      );
-    }
-
-    return {
-      message: 'Otp verified. Procced to PIN setup',
-      isRegistered: false,
-    };
-  }
-
+  // Get payload for JWT token
   private getPayload(user: User, deviceId: string): RefreshTokenPayload {
     const payload: RefreshTokenPayload = {
       sub: user.id,
@@ -119,11 +42,13 @@ export class AuthService {
     return payload;
   }
 
+  // Register new user
   async register(
     authCredentialDto: AuthCredentialsDto,
   ): Promise<TokensResponse> {
     const { phone, pin, deviceId } = authCredentialDto;
 
+    // Check if user has clearance to register
     const clearanceKey = `register_clearance:${phone}`;
     const hasClearance = await this.redisService.get(clearanceKey);
     if (!hasClearance) {
@@ -132,6 +57,7 @@ export class AuthService {
       );
     }
 
+    // Check if user is already registered
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
     });
@@ -139,22 +65,26 @@ export class AuthService {
       throw new ConflictException('Phone number is already registered.');
     }
 
+    // Hash the PIN
     const hashPin = await this.passwordSerivce.hash(pin);
 
     try {
       const tokens = await this.prisma.$transaction(async (tx) => {
+        // Create new user
         const newUser = await tx.user.create({ data: { phone, pin: hashPin } });
 
+        // Generate tokens
         const { accessToken, refreshToken } = await this.getTokens(
           this.getPayload(newUser, deviceId),
         );
 
+        // Hash the refresh token
         const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
 
-        await tx.wallet.create({
-          data: { userId: newUser.id, type: 'PERSONAL', balance: 0 },
-        });
+        // Create wallet for new user
+        await this.walletsService.createPersonalWallet(tx, newUser.id);
 
+        // Register this device as Trust Device
         await tx.trustDevice.create({
           data: {
             userId: newUser.id,
@@ -167,6 +97,7 @@ export class AuthService {
         return { accessToken, refreshToken };
       });
 
+      // Delete the clearance key
       await this.redisService.del(clearanceKey);
 
       return tokens;
@@ -178,9 +109,11 @@ export class AuthService {
     }
   }
 
+  // Login user
   async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
     const { phone, deviceId, pin } = authCredentialDto;
 
+    // Check if user is registered
     const user = await this.prisma.user.findUnique({
       where: { phone },
       include: { trustDevices: true },
@@ -189,24 +122,31 @@ export class AuthService {
       throw new UnauthorizedException('Invalid phone number');
     }
 
+    // Verify PIN
     const isPinValid = await this.passwordSerivce.verify(pin, user.pin);
     if (!isPinValid) {
       throw new UnauthorizedException('Invalid pin number');
     }
 
+    // Check if user is active
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException(
         `Account is currently ${user.status}. Please contact support`,
       );
     }
 
+    // Check if device is trusted
     const isDeviceTrusted = user.trustDevices.some(
       (device) => device.deviceId === deviceId,
     );
     if (!isDeviceTrusted) {
       throw new ForbiddenException('UNRECOGNIZED_DEVICE');
     }
+
+    // Generate tokens
     const tokens = await this.getTokens(this.getPayload(user, deviceId));
+
+    // Update refresh token
     await this.updateRefreshToken(deviceId, tokens.refreshToken);
 
     return {
@@ -215,6 +155,7 @@ export class AuthService {
     };
   }
 
+  // Update refresh token
   private async updateRefreshToken(
     deviceId: string,
     refreshToken: string,
@@ -222,6 +163,7 @@ export class AuthService {
     try {
       const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
 
+      // Update refresh token
       await this.prisma.trustDevice.update({
         where: { deviceId },
         data: { refreshTokenHash },
@@ -232,6 +174,7 @@ export class AuthService {
         error instanceof Error ? error.stack : error,
       );
 
+      // Check if device is not found
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         const primsmaRecordToUpdateNotFoundCode = 'P2025';
         if (error.code === primsmaRecordToUpdateNotFoundCode) {
@@ -247,10 +190,15 @@ export class AuthService {
     }
   }
 
+  // Refresh tokens
   async refreshTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
     try {
+      // Generate tokens
       const tokens = await this.getTokens(payload);
+
+      // Update refresh token
       await this.updateRefreshToken(payload.deviceId, tokens.refreshToken);
+
       return {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -264,10 +212,13 @@ export class AuthService {
     }
   }
 
+  // Generate tokens
   private async getTokens(
     payload: RefreshTokenPayload,
   ): Promise<TokensResponse> {
+    // Generate Access and Refresh token
     const [accessToken, refreshToken] = await Promise.all([
+      // Generate Access token
       this.jwtService.signAsync(
         { sub: payload.sub, role: payload.role },
         {
@@ -277,6 +228,7 @@ export class AuthService {
           ),
         },
       ),
+      // Generate Refresh token
       this.jwtService.signAsync(
         {
           sub: payload.sub,

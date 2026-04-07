@@ -9,24 +9,23 @@ import {
 import { catchError, Observable, of, tap, throwError } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
-import ms from 'ms';
 import { Request } from 'express';
 
 type IdempotencyCacheState = 'PROCESSING' | Record<string, unknown>;
 
 export class IdempotencyInterceptor implements NestInterceptor {
   private readonly logger = new Logger(IdempotencyInterceptor.name);
-  private readonly idempotency_TTL: ms.StringValue;
-  private readonly processing_TTL: ms.StringValue;
+  private readonly idempotency_TTL: number;
+  private readonly processing_TTL: number;
 
   constructor(
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
   ) {
-    this.idempotency_TTL = configService.getOrThrow<ms.StringValue>(
+    this.idempotency_TTL = configService.getOrThrow<number>(
       'IDEMPOTENCY_TTL_SECONDS',
     );
-    this.processing_TTL = configService.getOrThrow<ms.StringValue>(
+    this.processing_TTL = configService.getOrThrow<number>(
       'PROCESSING_TTL_SECONDS',
     );
   }
@@ -73,7 +72,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // STATE C : It's a new request
     // Lock it and set a 30s TTL in case server crashes
     const locked = await this.redisService.set(redisKey, 'PROCESSING', {
-      ttl: ms(this.processing_TTL) / 1000,
+      ttl: this.processing_TTL,
       nx: true,
     });
 
@@ -93,7 +92,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
         // Back to Redis for 24 hours
         this.redisService
           .set(redisKey, responsePayload, {
-            ttl: ms(this.idempotency_TTL) / 1000,
+            ttl: this.idempotency_TTL,
           })
           .catch((error) => {
             this.logger.error(

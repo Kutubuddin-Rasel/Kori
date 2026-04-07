@@ -26,7 +26,7 @@ import { DynamicLedgerDescripton } from 'src/common/utils/dynamic-ledger-descrip
 @Injectable()
 export class TransactionsService implements OnModuleInit {
   private readonly logger = new Logger(TransactionsService.name);
-  private cachedSystemWalletId: string;
+  private cachedSystemWalletId!: string;
 
   constructor(
     private readonly prisma: PrismaService,

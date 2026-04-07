@@ -21,18 +21,20 @@ import type { Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import type { RefreshTokenPayload } from './interfaces/jwt.interface';
+import { OtpService } from './services/otp.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly otpService: OtpService,
     private readonly cookieService: CookieService,
   ) {}
 
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body() sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
-    return this.authService.sendOtp(sendOtpDto);
+    return this.otpService.sendOtp(sendOtpDto);
   }
 
   @Post('verify-otp')
@@ -40,7 +42,7 @@ export class AuthController {
   async verifyOtp(
     @Body() verifyOtpDto: VerifyOtpDto,
   ): Promise<VerifyOtpResponse> {
-    return this.authService.verifyOtp(verifyOtpDto);
+    return this.otpService.verifyOtp(verifyOtpDto);
   }
 
   @Post('register')
