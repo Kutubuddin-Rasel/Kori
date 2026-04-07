@@ -194,7 +194,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid pin number');
     }
 
-    if (user.status === 'ACTIVE') {
+    if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException(
         `Account is currently ${user.status}. Please contact support`,
       );
