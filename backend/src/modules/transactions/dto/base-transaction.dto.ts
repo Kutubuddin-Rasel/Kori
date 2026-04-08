@@ -15,7 +15,7 @@ export class BaseTransactionDto {
     },
   )
   @IsNotEmpty()
-  amount: string;
+  amount: string = '';
 
   @IsString()
   @IsOptional()

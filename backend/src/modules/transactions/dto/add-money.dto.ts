@@ -6,5 +6,5 @@ export class AddMoneyDto extends BaseTransactionDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  bankGatewayToken: string;
+  bankGatewayToken: string = '';
 }

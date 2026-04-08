@@ -15,8 +15,8 @@ import { PasswordService } from './services/password.service';
 import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
-import { User } from 'generated/prisma/browser';
-import { Prisma } from 'generated/prisma/client';
+import { User } from '../../../generated/prisma/client';
+import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 
 @Injectable()

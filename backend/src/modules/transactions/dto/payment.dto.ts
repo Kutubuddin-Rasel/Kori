@@ -10,7 +10,7 @@ import { BaseTransactionDto } from './base-transaction.dto';
 export class PaymentDto extends BaseTransactionDto {
   @IsUUID(4, { message: 'merchantId must be a valid UUID v4.' })
   @IsNotEmpty()
-  merchantId: string;
+  merchantId: string = '';
 
   @IsString()
   @IsOptional()

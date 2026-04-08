@@ -1,16 +1,16 @@
-import { IsEmpty, IsPhoneNumber, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsPhoneNumber, IsString, Length } from 'class-validator';
 
 export class AuthCredentialsDto {
-  @IsEmpty()
+  @IsNotEmpty()
   @IsPhoneNumber('BD')
-  phone: string;
+  phone: string = '';
 
-  @IsEmpty()
+  @IsNotEmpty()
   @IsString()
   @Length(4, 5, { message: 'PIN must be 4 or 5 digits' })
-  pin: string;
+  pin: string = '';
 
-  @IsEmpty()
+  @IsNotEmpty()
   @IsString()
-  deviceId: string;
+  deviceId: string = '';
 }
