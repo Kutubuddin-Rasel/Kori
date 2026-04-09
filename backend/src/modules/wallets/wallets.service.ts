@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import {
-  BalanceResponse,
+  WalletBalanceResponse,
   WalletOwnerResponse,
   WalletStateForTransaction,
 } from './interfaces/wallet-interface';
@@ -19,6 +19,12 @@ import {
 } from '@prisma/client/runtime/client';
 import { PrismaClient } from 'generated/prisma/client';
 
+/**
+ * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
+ * creating personal and system wallets, and managing wallet status (active/inactive).
+ * It interacts with the database through PrismaService and provides methods that can be used by other modules,
+ * the Transactions module, to perform wallet lookups and updates as part of transaction processing.
+ */
 @Injectable()
 export class WalletsService {
   constructor(
@@ -27,10 +33,11 @@ export class WalletsService {
   ) {}
 
   /*
-    User-facing: Return the authenticated user's wallet balance.
+    User-facing: Get the balance and status of the user's wallet
    */
-  async getMyBalance(userId: string): Promise<BalanceResponse> {
+  async getMyBalance(userId: string): Promise<WalletBalanceResponse> {
     try {
+      // Check if the wallet is active here, to prevent users from attempting transactions with frozen wallets.
       const wallet = await this.prisma.wallet.findUnique({
         where: { userId },
         select: {
@@ -42,48 +49,17 @@ export class WalletsService {
         },
       });
 
+      // The wallet may exist but be inactive.
       if (!wallet) {
         throw new NotFoundException(
           'No wallet found for this account. Contact Support',
         );
       }
+
+      // If the wallet is frozen, throw an error.
       if (!wallet.isActive) {
         throw new BadRequestException(
           'Your wallet is currently frozen. Contact support.',
-        );
-      }
-      return wallet;
-    } catch (error) {
-      this.logger.error(
-        'Failed to get wallet by user ID',
-        error instanceof Error ? error.stack : error,
-      );
-
-      throw new InternalServerErrorException(
-        'An error ocured while getting wallet by user ID',
-      );
-    }
-  }
-
-  /*
-    Cross-module Api: Transaction module call this to find a user's wallet before initiating money movement.
-   */
-  async getWalletByUserId(userId: string): Promise<BalanceResponse> {
-    try {
-      const wallet = await this.prisma.wallet.findUnique({
-        where: { userId },
-        select: {
-          id: true,
-          balance: true,
-          type: true,
-          isActive: true,
-          currency: true,
-        },
-      });
-
-      if (!wallet) {
-        throw new NotFoundException(
-          'No wallet found for this account. Contact Support',
         );
       }
       return wallet;
@@ -120,6 +96,8 @@ export class WalletsService {
    */
   async getWalletById(walletId: string): Promise<WalletOwnerResponse> {
     try {
+      // This method is used by admins to look up any wallet by its ID.
+      // It returns detailed information about the wallet.
       const wallet = await this.prisma.wallet.findUnique({
         where: { id: walletId },
         select: {
@@ -179,6 +157,9 @@ export class WalletsService {
 
       return wallet;
     } catch (error) {
+      /**
+       * Prisma error code P2002 is a unique constraint violation, which in this context likely means an attempt to create a duplicate system wallet of the same type and currency.
+       */
       if (
         error instanceof PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -209,6 +190,7 @@ export class WalletsService {
       throw new ConflictException('Wallet is already deactived');
     }
 
+    // Update the wallet's isActive status to false, so it can no longer be used for trnasactions.
     try {
       const wallet = await this.prisma.wallet.update({
         where: { id: walletId },
@@ -255,6 +237,7 @@ export class WalletsService {
       throw new ConflictException('Wallet is already actived');
     }
 
+    // Update the wallet's isActive status to true, so it can be used for trnasactions again.
     try {
       const wallet = await this.prisma.wallet.update({
         where: { id: walletId },
@@ -291,6 +274,7 @@ export class WalletsService {
     walletId: string,
   ): Promise<WalletStateForTransaction> {
     try {
+      // Check if the wallet is active here, to prevent users from attempting transactions with frozen wallets.
       const wallet = await this.prisma.wallet.findUnique({
         where: {
           id: walletId,
