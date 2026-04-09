@@ -31,12 +31,14 @@ export class AuthController {
     private readonly cookieService: CookieService,
   ) {}
 
+  // Endpoint to send OTP to the user's phone number
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body() sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
     return this.otpService.sendOtp(sendOtpDto);
   }
 
+  // Endpoint to verify the OTP entered by the user
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   async verifyOtp(
@@ -45,6 +47,7 @@ export class AuthController {
     return this.otpService.verifyOtp(verifyOtpDto);
   }
 
+  // Endpoint for user registration using phone number and PIN
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(
@@ -57,6 +60,7 @@ export class AuthController {
     return { accessToken };
   }
 
+  // Endpoint for user login using phone number and PIN
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -69,6 +73,7 @@ export class AuthController {
     return { accessToken };
   }
 
+  // Endpoint to refresh access token using a valid refresh token
   @Post('refresh')
   @UseGuards(RefreshTokenGuard)
   @HttpCode(HttpStatus.OK)

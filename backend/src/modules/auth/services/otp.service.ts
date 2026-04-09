@@ -29,6 +29,8 @@ export class OtpService {
     this.CLEARANCE_TTL = configService.getOrThrow<number>('CLEARANCE_TTL');
   }
 
+  // For development purposes only - generates a random 4-digit OTP and stores it in Redis with a TTL.
+  // In production, integrate with an SMS gateway to send the OTP to the user's phone.
   async sendOtp(sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
     const { phone } = sendOtpDto;
 
@@ -52,6 +54,7 @@ export class OtpService {
     };
   }
 
+  // Verifies the OTP provided by the user
   async verifyOtp(VerifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
     const { phone, otp, deviceId } = VerifyOtpDto;
     const redisKey = `otp:${phone}`;
@@ -63,6 +66,7 @@ export class OtpService {
     if (storedOtp != otp) {
       throw new BadRequestException('Invalid OTP');
     }
+    // OTP is valid, delete it from Redis to prevent reuse
     await this.redisService.del(redisKey);
 
     const existingUser = await this.prisma.user.findUnique({
@@ -81,13 +85,15 @@ export class OtpService {
       };
     }
 
+    // If user doesn't exist, set a clearance key in Redis to allow them to proceed to PIN setup
+    // Without creating an account first. This key will have a TTL to prevent misuse.
     const clearanceKey = `register_clearance:${phone}`;
     const result = await this.redisService.set(clearanceKey, 'GRANTED', {
       ttl: this.CLEARANCE_TTL,
     });
     if (!result) {
       throw new InternalServerErrorException(
-        'Server error for setting clearnace key',
+        'Server error for setting clearance key',
       );
     }
 

@@ -11,6 +11,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
+    // Call the super constructor with the JWT strategy options
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -18,10 +19,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
+  // This method is called by Passport to validate the JWT payload
   async validate(payload: AccessTokenPayload): Promise<AccessTokenPayload> {
     if (!payload.sub) {
       throw new UnauthorizedException();
     }
+
+    // Check if the user still exists in the database
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });

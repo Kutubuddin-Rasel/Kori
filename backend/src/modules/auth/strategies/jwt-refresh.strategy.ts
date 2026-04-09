@@ -19,6 +19,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
   ) {
+    // Call the super constructor with the appropriate options for the JWT Refresh strategy
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (req: Request) => this.cookieService.extractRefreshCookie(req),
@@ -29,14 +30,18 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
+  // The validate method is called by Passport to validate the JWT payload and the refresh token
   async validate(
     req: Request,
     payload: RefreshTokenPayload,
   ): Promise<RefreshTokenPayload> {
+    // Extract the refresh token from the request using the cookie service
     const refreshToken = this.cookieService.extractRefreshCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not found');
     }
+
+    // Look up the trusted device in the database using the device ID from the JWT payload
     const trustDevice = await this.prisma.trustDevice.findUnique({
       where: {
         deviceId: payload.deviceId,
@@ -59,6 +64,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
       );
     }
 
+    // Verify the refresh token by comparing it with the stored hash in the database
     const match = await this.passwordService.verify(
       refreshToken,
       trustDevice.refreshTokenHash,
