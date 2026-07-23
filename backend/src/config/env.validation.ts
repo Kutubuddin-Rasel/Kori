@@ -42,6 +42,38 @@ class EnvironmentVariables {
   @IsNotEmpty()
   @IsString()
   REDIS_PASSWORD: string = '';
+
+  @IsNotEmpty()
+  @IsString()
+  ACCESS_TOKEN_SECRET: string = '';
+
+  @IsNotEmpty()
+  @IsString()
+  REFRESH_TOKEN_SECRET: string = '';
+
+  @IsNotEmpty()
+  @IsString()
+  ACCESS_TOKEN_EXPIRY: string = '';
+
+  @IsNotEmpty()
+  @IsString()
+  REFRESH_TOKEN_EXPIRY: string = '';
+
+  @IsNotEmpty()
+  @IsNumber()
+  OTP_TIME_LIMIT: number = 180;
+
+  @IsNotEmpty()
+  @IsNumber()
+  CLEARANCE_TTL: number = 300;
+
+  @IsNotEmpty()
+  @IsNumber()
+  IDEMPOTENCY_TTL_SECONDS: number = 86400;
+
+  @IsNotEmpty()
+  @IsNumber()
+  PROCESSING_TTL_SECONDS: number = 30;
 }
 
 /**
