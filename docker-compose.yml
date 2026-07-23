@@ -61,6 +61,8 @@ services:
       - "${MAILPORT_UI_PORT}:8025"
       - "${MAILPORT_SMTP_PORT}:1025"
 
+
+
 volumes:
   postgres_data:
     driver: local
