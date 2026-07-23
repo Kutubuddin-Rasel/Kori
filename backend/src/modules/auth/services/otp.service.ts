@@ -25,8 +25,8 @@ export class OtpService {
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
   ) {
-    this.OTP_TTL = configService.getOrThrow<number>('OTP_TIME_LIMIT');
-    this.CLEARANCE_TTL = configService.getOrThrow<number>('CLEARANCE_TTL');
+    this.OTP_TTL = this.configService.getOrThrow<number>('OTP_TIME_LIMIT');
+    this.CLEARANCE_TTL = this.configService.getOrThrow<number>('CLEARANCE_TTL');
   }
 
   // For development purposes only - generates a random 4-digit OTP and stores it in Redis with a TTL.
@@ -47,7 +47,7 @@ export class OtpService {
       );
     }
 
-    console.log(`[DEVELOPMENT ONLY] OTP for ${phone} is: ${otp}`);
+    this.logger.log(`[DEVELOPMENT ONLY] OTP for ${phone} is: ${otp}`);
     return {
       message: 'OTP sent successfully. It will expire in 3 minutes.',
       expiresIn: this.OTP_TTL,
@@ -63,7 +63,7 @@ export class OtpService {
     if (!storedOtp) {
       throw new BadRequestException('Otp expired or was never sent');
     }
-    if (storedOtp != otp) {
+    if (storedOtp !== otp) {
       throw new BadRequestException('Invalid OTP');
     }
     // OTP is valid, delete it from Redis to prevent reuse
