@@ -17,7 +17,7 @@ import {
   DefaultArgs,
   PrismaClientKnownRequestError,
 } from '@prisma/client/runtime/client';
-import { PrismaClient } from 'generated/prisma/client';
+import { PrismaClient, WalletType } from 'generated/prisma/client';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
@@ -25,6 +25,7 @@ import { PrismaClient } from 'generated/prisma/client';
  * It interacts with the database through PrismaService and provides methods that can be used by other modules,
  * the Transactions module, to perform wallet lookups and updates as part of transaction processing.
  */
+
 @Injectable()
 export class WalletsService {
   constructor(
@@ -32,13 +33,16 @@ export class WalletsService {
     private readonly logger = new Logger(WalletsService.name),
   ) {}
 
-  /*
-    User-facing: Get the balance and status of the user's wallet
+  /**
+   * User-facing: Get the balance and status of the user's wallet
    */
   async getMyBalance(userId: string): Promise<WalletBalanceResponse> {
+    let wallet: WalletBalanceResponse | null;
+
+    // DB call
     try {
-      // Check if the wallet is active here, to prevent users from attempting transactions with frozen wallets.
-      const wallet = await this.prisma.wallet.findUnique({
+      // Get the wallet
+      wallet = await this.prisma.wallet.findUnique({
         where: { userId },
         select: {
           id: true,
@@ -48,37 +52,35 @@ export class WalletsService {
           currency: true,
         },
       });
-
-      // The wallet may exist but be inactive.
-      if (!wallet) {
-        throw new NotFoundException(
-          'No wallet found for this account. Contact Support',
-        );
-      }
-
-      // If the wallet is frozen, throw an error.
-      if (!wallet.isActive) {
-        throw new BadRequestException(
-          'Your wallet is currently frozen. Contact support.',
-        );
-      }
-      return wallet;
     } catch (error) {
       this.logger.error(
         'Failed to get wallet by user ID',
         error instanceof Error ? error.stack : error,
       );
+      throw new InternalServerErrorException('Failed to retrive wallet');
+    }
 
-      throw new InternalServerErrorException(
-        'An error ocured while getting wallet by user ID',
+    // The wallet is not found in the database, throw a NotFoundException to inform the user that they do not have a wallet associated with their account.
+    if (!wallet) {
+      throw new NotFoundException(
+        'No wallet found for this account. Contact Support',
       );
     }
+
+    // The wallet is found but is inactive, throw a BadRequestException to inform the user that their wallet is frozen and cannot be used for transactions.
+    if (!wallet.isActive) {
+      throw new BadRequestException(
+        `Your wallet is currently frozen. Contact support.`,
+      );
+    }
+
+    return wallet;
   }
 
-  /*
-  Internal API : Create a Personal Wallet during Registration
-  Accepts a Prisma Transaction Context to maintain cross-module ACID guarantees
-  */
+  /**
+   * Internal API : Create a Personal Wallet during Registration
+   * Accepts a Prisma Transaction Context to maintain cross-module ACID guarantees
+   */
   async createPersonalWallet(
     tx: Omit<
       PrismaClient<never, undefined, DefaultArgs>,
@@ -87,7 +89,7 @@ export class WalletsService {
     userId: string,
   ): Promise<void> {
     await tx.wallet.create({
-      data: { userId, type: 'PERSONAL', balance: 0n },
+      data: { userId, type: WalletType.PERSONAL, balance: 0n },
     });
   }
 
@@ -95,10 +97,15 @@ export class WalletsService {
     Admin-facing: Look up any wallet via it's own userId.
    */
   async getWalletById(walletId: string): Promise<WalletOwnerResponse> {
+    let wallet: WalletOwnerResponse | null;
+
+    /**
+     * DB call to get the wallet
+     * This method is used by admins to look up any wallet by its ID.
+     * It returns detailed information about the wallet.
+     */
     try {
-      // This method is used by admins to look up any wallet by its ID.
-      // It returns detailed information about the wallet.
-      const wallet = await this.prisma.wallet.findUnique({
+      wallet = await this.prisma.wallet.findUnique({
         where: { id: walletId },
         select: {
           id: true,
@@ -110,28 +117,24 @@ export class WalletsService {
           userId: true,
         },
       });
-
-      if (!wallet) {
-        throw new NotFoundException(
-          `Wallet with ID:${walletId} does not exist.`,
-        );
-      }
-      return wallet;
     } catch (error) {
       this.logger.error(
         'Failed to get wallet by ID',
         error instanceof Error ? error.stack : error,
       );
-
-      throw new InternalServerErrorException(
-        'An error ocured while getting wallet by ID',
-      );
+      throw new InternalServerErrorException('Failed to retrive wallet');
     }
+
+    // The wallet is not found in the database, throw a NotFoundException to inform the admin that the wallet with the specified ID does not exist.
+    if (!wallet) {
+      throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+    }
+    return wallet;
   }
 
-  /*
-    Admin-only: Create a System or Marchent wallet.
-      These wallets have no userID.
+  /**
+   * Admin-only: Create a System or Marchent wallet.
+   * These wallets have no userID.
    */
   async createSystemWallet(
     SystemWalletDto: CreateSystemWalletDto,
@@ -273,9 +276,11 @@ export class WalletsService {
   async getWalletStateForTransaction(
     walletId: string,
   ): Promise<WalletStateForTransaction> {
+    let wallet: WalletStateForTransaction | null;
+
+    // DB call to get the wallet state for transaction
     try {
-      // Check if the wallet is active here, to prevent users from attempting transactions with frozen wallets.
-      const wallet = await this.prisma.wallet.findUnique({
+      wallet = await this.prisma.wallet.findUnique({
         where: {
           id: walletId,
           isActive: true,
@@ -286,14 +291,6 @@ export class WalletsService {
           balance: true,
         },
       });
-
-      if (!wallet) {
-        throw new NotFoundException(
-          `Wallet with ID:${walletId} does not exist.`,
-        );
-      }
-
-      return wallet;
     } catch (error) {
       this.logger.error(
         'Failed to get wallet state for transaction',
@@ -304,5 +301,12 @@ export class WalletsService {
         'An error ocured while getting wallet state for transaction',
       );
     }
+
+    // The wallet is not found in the database, throw a NotFoundException to inform the caller that the wallet with the specified ID does not exist or is inactive.
+    if (!wallet) {
+      throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+    }
+
+    return wallet;
   }
 }
