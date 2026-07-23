@@ -15,7 +15,7 @@ import { PasswordService } from './services/password.service';
 import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
-import { User } from '../../../generated/prisma/client';
+import { AccountStatus, User } from '../../../generated/prisma/client';
 import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 
@@ -26,7 +26,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
-    private readonly passwordSerivce: PasswordService,
+    private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
     private readonly logger = new Logger(AuthService.name),
   ) {}
@@ -66,7 +66,7 @@ export class AuthService {
     }
 
     // Hash the PIN
-    const hashPin = await this.passwordSerivce.hash(pin);
+    const hashPin = await this.passwordService.hash(pin);
 
     try {
       const tokens = await this.prisma.$transaction(async (tx) => {
@@ -79,7 +79,7 @@ export class AuthService {
         );
 
         // Hash the refresh token
-        const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
+        const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
         // Create wallet for new user
         await this.walletsService.createPersonalWallet(tx, newUser.id);
@@ -123,13 +123,13 @@ export class AuthService {
     }
 
     // Verify PIN
-    const isPinValid = await this.passwordSerivce.verify(pin, user.pin);
+    const isPinValid = await this.passwordService.verify(pin, user.pin);
     if (!isPinValid) {
       throw new UnauthorizedException('Invalid pin number');
     }
 
     // Check if user is active
-    if (user.status !== 'ACTIVE') {
+    if (user.status !== AccountStatus.ACTIVE) {
       throw new UnauthorizedException(
         `Account is currently ${user.status}. Please contact support`,
       );
@@ -161,7 +161,7 @@ export class AuthService {
     refreshToken: string,
   ): Promise<void> {
     try {
-      const refreshTokenHash = await this.passwordSerivce.hash(refreshToken);
+      const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
       // Update refresh token
       await this.prisma.trustDevice.update({
