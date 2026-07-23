@@ -51,7 +51,7 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
     @Body() authCredentialDto: AuthCredentialsDto,
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
@@ -64,7 +64,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
     @Body() authCredentialDto: AuthCredentialsDto,
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
@@ -79,7 +79,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refreshTokens(
     @CurrentUser() user: RefreshTokenPayload,
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
       await this.authService.refreshTokens(user);

@@ -20,7 +20,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   // Redis client instance
   private redis!: Redis;
   private isConnected = false;
-  private readonly looger = new Logger(RedisService.name);
+  private readonly logger = new Logger(RedisService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -39,30 +39,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.redis.on('error', (error) => {
-        this.looger.error('Redis connection error: ', error.message);
+        this.logger.error('Redis connection error: ', error.message);
         this.isConnected = false;
       });
 
       this.redis.on('connect', () => {
-        this.looger.log('Redis connected successfully');
+        this.logger.log('Redis connected successfully');
         this.isConnected = true;
       });
 
       this.redis.on('ready', () => {
-        this.looger.log('Redis ready for operations');
+        this.logger.log('Redis ready for operations');
         this.isConnected = true;
       });
 
       this.redis.on('reconnecting', () => {
-        this.looger.log('Redis reconnecting ....');
+        this.logger.log('Redis reconnecting ....');
       });
 
       this.redis.on('end', () => {
-        this.looger.log('Redis connection ended');
+        this.logger.log('Redis connection ended');
         this.isConnected = false;
       });
     } catch (error: unknown) {
-      this.looger.error('Redis error: ', error);
+      this.logger.error('Redis error: ', error);
       this.isConnected = false;
     }
   }
@@ -71,7 +71,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy() {
     if (this.redis) {
       await this.redis.quit();
-      this.looger.log('Redis disconnected');
+      this.logger.log('Redis disconnected');
     }
   }
 
@@ -84,7 +84,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async get<T>(key: string): Promise<T | null> {
     if (!this.isConnected) {
-      this.looger.warn('Redis is not connected');
+      this.logger.warn('Redis is not connected');
       return null;
     }
 
@@ -96,7 +96,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     try {
       return JSON.parse(data) as T;
     } catch (error) {
-      this.looger.error(
+      this.logger.error(
         `Error getting Redis key:${key}`,
         error instanceof Error ? error.stack : error,
       );
@@ -120,7 +120,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     options: RedisCacheOptions,
   ): Promise<boolean> {
     if (!this.isConnected) {
-      this.looger.warn('Redis is not connected');
+      this.logger.warn('Redis is not connected');
       return false;
     }
 
@@ -142,7 +142,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
       return result === 'OK';
     } catch (error) {
-      this.looger.error(
+      this.logger.error(
         `Error setting Redis key:${key}`,
         error instanceof Error ? error.stack : error,
       );
@@ -159,7 +159,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
    */
   async del(key: string): Promise<boolean> {
     if (!this.isConnected) {
-      this.looger.warn('Redis is not connected');
+      this.logger.warn('Redis is not connected');
       return false;
     }
 
@@ -168,7 +168,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       const result = await this.redis.del(key);
       return result > 0;
     } catch (error) {
-      this.looger.error(
+      this.logger.error(
         `Error deleting Redis key:${key}`,
         error instanceof Error ? error.stack : error,
       );
