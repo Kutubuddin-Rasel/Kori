@@ -7,7 +7,6 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { WalletsService } from '../wallets/wallets.service';
 import {
   TransactionResultResponse,
@@ -45,7 +44,6 @@ export class TransactionsService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redisService: RedisService,
     private readonly walletsService: WalletsService,
   ) {}
 
@@ -53,7 +51,7 @@ export class TransactionsService implements OnModuleInit {
     try {
       // Load and cache the System Wallet ID on startup
       const systemWallet = await this.prisma.wallet.findFirst({
-        where: { type: 'SYSTEM' },
+        where: { type: WalletType.SYSTEM },
         select: { id: true },
       });
 
@@ -84,14 +82,16 @@ export class TransactionsService implements OnModuleInit {
   ): Promise<TransactionResultResponse> {
     const { amount, receiverId, reference } = dto;
 
-    // Validate the transaction request and prepare the necessary calculations for fees and total required amount
-    const math = await this.validateAndPrepareTransfer(
+    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
+    const math = this.calculateTransferMath(amount, TransactionType.SEND_MONEY);
+
+    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
+    await this.assertTransferEligibility(
       senderId,
       receiverId,
-      amount,
-      TransactionType.SEND_MONEY,
       WalletType.PERSONAL,
       WalletType.PERSONAL,
+      math.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -120,14 +120,17 @@ export class TransactionsService implements OnModuleInit {
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
     const { amount, receiverId, reference } = dto;
-    // Validate the transaction request and prepare the necessary calculations for fees and total required amount
-    const math = await this.validateAndPrepareTransfer(
+
+    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
+    const math = this.calculateTransferMath(amount, TransactionType.CASH_IN);
+
+    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
+    await this.assertTransferEligibility(
       agentId,
       receiverId,
-      amount,
-      TransactionType.CASH_IN,
       WalletType.AGENT,
       WalletType.PERSONAL,
+      math.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -157,14 +160,16 @@ export class TransactionsService implements OnModuleInit {
   ): Promise<TransactionResultResponse> {
     const { amount, agentId, reference } = dto;
 
-    // Validate the transaction request and prepare the necessary calculations for fees and total required amount
-    const math = await this.validateAndPrepareTransfer(
+    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
+    const math = this.calculateTransferMath(amount, TransactionType.CASH_OUT);
+
+    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
+    await this.assertTransferEligibility(
       userId,
       agentId,
-      amount,
-      TransactionType.CASH_OUT,
       WalletType.PERSONAL,
       WalletType.AGENT,
+      math.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -194,15 +199,18 @@ export class TransactionsService implements OnModuleInit {
   ): Promise<TransactionResultResponse> {
     const { amount, merchantId, invoiceNumber, reference } = dto;
 
-    // Validate the transaction request and prepare the necessary calculations for fees and total required amount
-    const math = await this.validateAndPrepareTransfer(
+    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
+    const math = this.calculateTransferMath(amount, TransactionType.PAYMENT);
+
+    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
+    await this.assertTransferEligibility(
       userId,
       merchantId,
-      amount,
-      TransactionType.PAYMENT,
       WalletType.PERSONAL,
       WalletType.MERCHANT,
+      math.totalRequiredAmount,
     );
+
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
     return this.executeACIDTransfer(
       userId,
@@ -234,14 +242,16 @@ export class TransactionsService implements OnModuleInit {
   ): Promise<TransactionResultResponse> {
     const { amount, bankGatewayToken, reference } = dto;
 
-    // Validate the transaction request and prepare the necessary calculations for fees and total required amount
-    const math = await this.validateAndPrepareTransfer(
+    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
+    const math = this.calculateTransferMath(amount, TransactionType.ADD_MONEY);
+
+    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
+    await this.assertTransferEligibility(
       this.cachedSystemWalletId,
       userId,
-      amount,
-      TransactionType.ADD_MONEY,
       WalletType.SYSTEM,
       WalletType.PERSONAL,
+      math.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -259,22 +269,25 @@ export class TransactionsService implements OnModuleInit {
   }
 
   /**
-   * Validates the transaction request and prepares the necessary calculations for fees and total required amount
+   * Validates the transaction request and check for eligibility based on business rules.
    * This method checks for:
    * - Validity of sender and receiver wallet types based on the transaction type
    * - Sufficient funds in the sender's wallet to cover the transfer amount and fees
    * - Ensures that the sender and receiver are not the same to prevent self-transfers
-   * - Calculates the fee based on the transaction type and returns the transfer amount, fee amount, and total required amount for the transaction
    * - Throws appropriate exceptions if any validation fails, such as insufficient funds, invalid wallet types, or missing system wallet
+   * @param senderId - The ID of the wallet initiating the transaction
+   * @param receiverId - The ID of the wallet receiving the transaction
+   * @param expectedSenderType - The expected type of the sender's wallet
+   * @param expectedReceiverType - The expected type of the receiver's wallet
+   * @param totalRequiredAmount - The total amount required for the transaction, including fees
    */
-  private async validateAndPrepareTransfer(
+  private async assertTransferEligibility(
     senderId: string,
     receiverId: string,
-    amount: string,
-    type: TransactionType,
     expectedSenderType: WalletType,
     expectedReceiverType: WalletType,
-  ): Promise<TransactionValidationResponse> {
+    totalRequiredAmount: bigint,
+  ): Promise<void> {
     // Check if sender and receiver are the same
     if (senderId === receiverId) {
       throw new BadRequestException(`Can not do transaction to own account`);
@@ -307,16 +320,28 @@ export class TransactionsService implements OnModuleInit {
       );
     }
 
-    // Calculate fee and total required amount
-    const transferAmount = BigInt(amount);
-    const feeAmount = calculateFee(transferAmount, type);
-    const totalRequiredAmount = transferAmount + feeAmount;
-
     // Check if sender has sufficient funds
     if (senderWallet.balance < totalRequiredAmount) {
       throw new BadRequestException('Insufficient funds');
     }
+  }
 
+  /**
+   * Calculates the transfer amount, fee amount, and total required amount for a transaction based on the provided amount and transaction type.
+   * This method uses the calculateFee utility function to determine the fee based on the transaction type and amount.
+   * It returns an object containing the transfer amount, fee amount, and total required amount, which can be used for further validation and processing of the transaction.
+   * @param amount - The amount involved in the transaction (as a string)
+   * @param type - The type of transaction for which the fee is being calculated
+   * @returns - An object containing transferAmount, feeAmount, and totalRequiredAmount as bigints
+   */
+  private calculateTransferMath(
+    amount: string,
+    type: TransactionType,
+  ): TransactionValidationResponse {
+    // Calculate fee and total required amount
+    const transferAmount = BigInt(amount);
+    const feeAmount = calculateFee(transferAmount, type);
+    const totalRequiredAmount = transferAmount + feeAmount;
     return {
       transferAmount,
       feeAmount,
@@ -331,16 +356,6 @@ export class TransactionsService implements OnModuleInit {
    * It validates that the sender still has sufficient funds after acquiring locks to prevent issues with concurrent transactions that may have modified the sender's balance before the locks were acquired.
    * The method creates a transaction record in the database, updates the sender's and receiver's wallet balances, and creates corresponding ledger entries for each operation. If there is a fee involved, it also updates the system wallet balance and creates a ledger entry for fee collection.
    * Finally, it returns a structured response containing transaction details such as transaction ID, type, amount, fee, status, creation time, and new balance.
-  
-   * The method performs the following steps:
-   * 1. Acquires locks on the sender, receiver, and system wallets in a consistent order to prevent deadlocks.
-   * 2. Re-fetches the locked wallets to get their most up-to-date state after acquiring locks.
-   * 3. Validates that the sender still has sufficient funds after acquiring locks to prevent issues with concurrent transactions.
-   * 4. Creates a transaction record in the database with the status set to 'COMPLETED'.
-   * 5. Updates the sender's wallet balance by decrementing the total required amount (transfer amount + fee) and creates a corresponding ledger entry.
-   * 6. Updates the receiver's wallet balance by incrementing the transfer amount and creates a corresponding ledger entry.
-   * 7. If there is a fee, updates the system wallet balance by incrementing the fee amount and creates a corresponding ledger entry for fee collection.
-   * 8. Returns a structured response containing transaction details such as transaction ID, type, amount, fee, status, creation time, and new balance.
    * The new balance returned is determined based on whether the sender or receiver is the system wallet to ensure accurate reporting of the user's balance after the transaction.
    */
   private async executeACIDTransfer(

@@ -26,13 +26,13 @@ import { AddMoneyDto } from './dto/add-money.dto';
  * idempotency key are handled gracefully.
  */
 @Controller('transactions')
+@UseGuards(AccessTokenGuard)
 @UseInterceptors(IdempotencyInterceptor)
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   // Endpoint to send money from one user to another
   @Post('send')
-  @UseGuards(AccessTokenGuard)
   async sendMoney(
     @CurrentUser('sub') userId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -43,7 +43,6 @@ export class TransactionsController {
 
   // Endpoint for agents to cash in money to a user's wallet
   @Post('cash-in')
-  @UseGuards(AccessTokenGuard)
   async cashIn(
     @CurrentUser('sub') agentId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -54,7 +53,6 @@ export class TransactionsController {
 
   // Endpoint for users to cash out money from their wallet
   @Post('cash-out')
-  @UseGuards(AccessTokenGuard)
   async cashOut(
     @CurrentUser('sub') userId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -65,7 +63,6 @@ export class TransactionsController {
 
   // Endpoint for users to make payments to merchants or service providers
   @Post('payment')
-  @UseGuards(AccessTokenGuard)
   async payment(
     @CurrentUser('sub') userId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -76,7 +73,6 @@ export class TransactionsController {
 
   // Endpoint for users to add money to their wallet using linked bank accounts or cards
   @Post('add-money')
-  @UseGuards(AccessTokenGuard)
   async addMoney(
     @CurrentUser('sub') userId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
