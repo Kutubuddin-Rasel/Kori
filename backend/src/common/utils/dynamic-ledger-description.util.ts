@@ -42,7 +42,7 @@ const dynamicLedgerDescriptionStrategies: Record<
     debitDescription: `Payment completed to Merchant ${receiverId}`,
     creditDescription: `Payment received from User ${senderId}`,
   }),
-  [TransactionType.ADD_MONEY]: (senderId, receiverId) => ({
+  [TransactionType.ADD_MONEY]: (_, receiverId) => ({
     debitDescription: `System Float allocation for User ${receiverId}`,
     creditDescription: `Digital Money Minted from External Bank for User ${receiverId}`,
   }),
