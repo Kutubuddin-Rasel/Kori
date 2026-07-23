@@ -3,6 +3,7 @@ import {
   CallHandler,
   ConflictException,
   ExecutionContext,
+  Injectable,
   Logger,
   NestInterceptor,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ type IdempotencyCacheState = 'PROCESSING' | Record<string, unknown>;
  * only the first request will be processed, and subsequent requests will either wait for the result or receive
  * the cached response. This is crucial for operations like payment processing to prevent double-charging.
  */
+@Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   private readonly logger = new Logger(IdempotencyInterceptor.name);
   private readonly idempotency_TTL: number;
@@ -27,10 +29,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
   ) {
-    this.idempotency_TTL = configService.getOrThrow<number>(
+    this.idempotency_TTL = this.configService.getOrThrow<number>(
       'IDEMPOTENCY_TTL_SECONDS',
     );
-    this.processing_TTL = configService.getOrThrow<number>(
+    this.processing_TTL = this.configService.getOrThrow<number>(
       'PROCESSING_TTL_SECONDS',
     );
   }

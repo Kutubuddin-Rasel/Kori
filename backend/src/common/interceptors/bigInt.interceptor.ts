@@ -16,7 +16,7 @@ export class BigIntInterceptor implements NestInterceptor {
    * @param next - The call handler that allows the request to proceed to the next interceptor or controller.
    * @returns An Observable that emits the transformed response data.
    */
-  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+  intercept(_: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       map((data: unknown) => {
         return this.serializeBigInt(data);
