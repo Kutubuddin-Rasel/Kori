@@ -17,7 +17,8 @@ import {
   DefaultArgs,
   PrismaClientKnownRequestError,
 } from '@prisma/client/runtime/client';
-import { PrismaClient, WalletType } from 'generated/prisma/client';
+import { PrismaClient } from 'generated/prisma/client';
+import { WalletType } from 'src/domain/enums';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
