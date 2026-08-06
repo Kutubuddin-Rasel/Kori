@@ -1,4 +1,4 @@
-import { TransactionType } from 'generated/prisma/enums';
+import { TransactionType } from 'src/domain/enums';
 
 // Interface for defining the structure of ledger descriptions
 interface LedgerDescription {
