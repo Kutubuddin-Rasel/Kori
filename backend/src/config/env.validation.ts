@@ -25,7 +25,7 @@ class EnvironmentVariables {
 
   @IsNotEmpty()
   @IsNumber()
-  Port: number = 3000;
+  PORT: number = 3000;
 
   @IsNotEmpty()
   @IsString()
@@ -83,7 +83,10 @@ class EnvironmentVariables {
  * @throws An error if validation fails, containing the details of the validation errors.
  */
 export function validate(config: Record<string, unknown>) {
-  // Transform the plain configuration object into an instance of EnvironmentVariables, enabling implicit type conversion.
+  /**
+   * Transform the plain configuration object into an instance of EnvironmentVariables, enabling implicit type conversion.
+   * Converts plain (literal) object to class (constructor) object. Also works with arrays.
+   */
   const validateConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
