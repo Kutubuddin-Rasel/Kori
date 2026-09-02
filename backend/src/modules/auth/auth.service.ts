@@ -21,6 +21,8 @@ import { WalletsService } from '../wallets/wallets.service';
 
 @Injectable()
 export class AuthService {
+  private logger = new Logger(AuthService.name);
+
   constructor(
     private readonly walletsService: WalletsService,
     private readonly configService: ConfigService,
@@ -28,7 +30,6 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
-    private readonly logger = new Logger(AuthService.name),
   ) {}
 
   // Get payload for JWT token

@@ -29,10 +29,9 @@ import { WalletType } from 'src/domain/enums';
 
 @Injectable()
 export class WalletsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly logger = new Logger(WalletsService.name),
-  ) {}
+  private logger = new Logger(WalletsService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * User-facing: Get the balance and status of the user's wallet

@@ -11,10 +11,9 @@ import { AuthCookie } from 'src/modules/auth/interfaces/jwt.interface';
 @Injectable()
 export class CookieService {
   private readonly isProduction: boolean;
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly logger = new Logger(CookieService.name),
-  ) {
+  private logger = new Logger(CookieService.name);
+
+  constructor(private readonly configService: ConfigService) {
     // Determine if the application is running in production
     this.isProduction =
       configService.getOrThrow<string>('NODE_ENV') === 'production';
