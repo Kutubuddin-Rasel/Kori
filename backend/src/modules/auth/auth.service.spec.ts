@@ -83,7 +83,7 @@ describe('AuthService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should reject registartion when clearence is missing', async () => {
+  it('reject registration when OTP clearance is missing', async () => {
     const credentials = {
       phone: '+8801712345678',
       pin: '1234',
@@ -95,7 +95,7 @@ describe('AuthService', () => {
     );
 
     expect(redisServiceStub.get).toHaveBeenCalledWith(
-      `register_clearence:${credentials.phone}`,
+      `register_clearance:${credentials.phone}`,
     );
 
     expect(prismaServiceStub.user.findUnique).not.toHaveBeenCalled();
