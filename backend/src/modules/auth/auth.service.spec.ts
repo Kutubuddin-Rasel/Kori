@@ -165,4 +165,87 @@ describe('AuthService', () => {
     expect(jwtServiceStub.signAsync).not.toHaveBeenCalled();
     expect(walletsServiceStub.createPersonalWallet).not.toHaveBeenCalled();
   });
+
+  it('register a new user when OTP clearance is valid', async () => {
+    const credentials = {
+      phone: '+8801712345678',
+      pin: '1234',
+      deviceId: 'device-1',
+    };
+
+    redisServiceStub.get.mockResolvedValueOnce('GRANTED');
+    prismaServiceStub.user.findUnique.mockResolvedValueOnce(null);
+
+    passwordServiceStub.hash
+      .mockResolvedValueOnce('hash-pin')
+      .mockResolvedValueOnce('hash-refresh-token');
+
+    jwtServiceStub.signAsync
+      .mockResolvedValueOnce('access-token')
+      .mockResolvedValueOnce('refresh-token');
+
+    configServiceStub.getOrThrow.mockImplementation((key: string) => {
+      const value: Record<string, string> = {
+        ACCESS_TOKEN_SECRET: 'access-secret',
+        ACCESS_TOKEN_EXPIRY: '15m',
+        REFRESH_TOKEN_SECRET: 'refresh-secret',
+        REFRESH_TOKEN_EXPIRY: '7d',
+      };
+
+      return value[key];
+    });
+
+    const txStub = {
+      user: {
+        create: jest.fn().mockResolvedValue({
+          id: 'user-1',
+          phone: credentials.phone,
+          role: 'CUSTOMER',
+        }),
+      },
+      trustDevice: {
+        create: jest.fn().mockResolvedValue({
+          id: 'trust-device-1',
+        }),
+      },
+    };
+
+    prismaServiceStub.$transaction.mockImplementation(
+      async <T>(callback: (tx: typeof txStub) => Promise<T>): Promise<T> => {
+        return await callback(txStub);
+      },
+    );
+
+    const result = await service.register(credentials);
+
+    expect(result).toEqual({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+    });
+
+    expect(txStub.user.create).toHaveBeenCalledWith({
+      data: {
+        phone: credentials.phone,
+        pin: 'hash-pin',
+      },
+    });
+
+    expect(walletsServiceStub.createPersonalWallet).toHaveBeenCalledWith(
+      txStub,
+      'user-1',
+    );
+
+    expect(txStub.trustDevice.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        deviceId: credentials.deviceId,
+        refreshTokenHash: 'hash-refresh-token',
+        isAuthorized: true,
+      },
+    });
+
+    expect(redisServiceStub.del).toHaveBeenCalledWith(
+      `register_clearance:${credentials.phone}`,
+    );
+  });
 });
