@@ -6,7 +6,7 @@
 export class InvalidMoneyExcepton extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'InvalideMoneyException';
+    this.name = InvalidMoneyExcepton.name;
 
     // Required in TypeScript when extending built-in Error.
     // Without this, instanceof checks fail in some runtimes.
