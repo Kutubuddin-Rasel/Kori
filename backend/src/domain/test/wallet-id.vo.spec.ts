@@ -1,7 +1,7 @@
-import { InvalidWalletIdException } from '../exceptions/invalid-walletId.exception';
+import { InvalidWalletIdException } from '../exceptions/invalid-wallet-Id.exception';
 import { WalletId } from '../value-objects/wallet-id.vo';
 
-describe('UserId', () => {
+describe('WalletId', () => {
   it('creates a wallet id from a valid value', () => {
     const id = WalletId.from('wallet-1');
 
@@ -25,5 +25,12 @@ describe('UserId', () => {
     const second = WalletId.from('wallet-1');
 
     expect(first.equals(second)).toBe(true);
+  });
+
+  it('return false for different wallet ids', () => {
+    const first = WalletId.from('wallet-1');
+    const second = WalletId.from('wallet-2');
+
+    expect(first.equals(second)).toBe(false);
   });
 });

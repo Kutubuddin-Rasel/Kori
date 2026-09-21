@@ -1,4 +1,4 @@
-import { InvalideUserIdException } from '../exceptions/invalid-userId.exception';
+import { InvalidUserIdException } from '../exceptions/invalid-user-Id.exception';
 
 /**
  * A Value Object representing a User's ID.
@@ -16,11 +16,11 @@ export class UserId {
    */
   static from(value: string): UserId {
     if (value.length === 0 || value.trim().length === 0) {
-      throw new InvalideUserIdException('UserId cannot be empty');
+      throw new InvalidUserIdException('UserId cannot be empty');
     }
 
     if (value !== value.trim()) {
-      throw new InvalideUserIdException(
+      throw new InvalidUserIdException(
         'UserId cannot contain surrounding whitespace',
       );
     }

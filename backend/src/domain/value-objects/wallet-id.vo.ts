@@ -1,4 +1,4 @@
-import { InvalidWalletIdException } from '../exceptions/invalid-walletId.exception';
+import { InvalidWalletIdException } from '../exceptions/invalid-wallet-Id.exception';
 
 /**
  * A Value Object representing a Wallet's ID.
