@@ -1,7 +1,7 @@
-export class InvalideWalletIdException extends Error {
+export class InvalidWalletIdException extends Error {
   constructor(message: string) {
     super(message);
-    this.name = InvalideWalletIdException.name;
-    Object.setPrototypeOf(this, InvalideWalletIdException.prototype);
+    this.name = InvalidWalletIdException.name;
+    Object.setPrototypeOf(this, InvalidWalletIdException.prototype);
   }
 }

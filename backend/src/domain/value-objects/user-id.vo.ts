@@ -1,8 +1,9 @@
-import { InvalideUserIdException } from '../exceptions/invalid-userID.exception';
+import { InvalideUserIdException } from '../exceptions/invalid-userId.exception';
 
 /**
  * A Value Object representing a User's ID.
- * This guarantees that if a UserId object exists in the system, it holds a valid, non-empty, and immutable ID string.
+ * This guarantees that if a UserId object exists in the system,
+ * it holds a valid, non-empty, and immutable ID string.
  */
 export class UserId {
   // Private so it can't be created directly with `new UserId()`.
@@ -37,6 +38,11 @@ export class UserId {
     return other.id === this.id;
   }
 
+  /**
+   * Automatically called when the object is used as a string.
+   * Useful for string interpolation (e.g., `User: ${userId}`)
+   * or when logging to the console, preventing "[object Object]" output.
+   */
   toString(): string {
     return this.id;
   }
