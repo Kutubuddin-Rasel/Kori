@@ -19,6 +19,8 @@ import {
 } from '@prisma/client/runtime/client';
 import { PrismaClient } from 'generated/prisma/client';
 import { WalletType } from 'src/domain/enums';
+import { UserId } from 'src/domain/value-objects/user-id.vo';
+import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
@@ -36,14 +38,14 @@ export class WalletsService {
   /**
    * User-facing: Get the balance and status of the user's wallet
    */
-  async getMyBalance(userId: string): Promise<WalletBalanceResponse> {
+  async getMyBalance(userId: UserId): Promise<WalletBalanceResponse> {
     let wallet: WalletBalanceResponse | null;
 
     // DB call
     try {
       // Get the wallet
       wallet = await this.prisma.wallet.findUnique({
-        where: { userId },
+        where: { id: userId.value },
         select: {
           id: true,
           balance: true,
@@ -96,7 +98,7 @@ export class WalletsService {
   /* 
     Admin-facing: Look up any wallet via it's own userId.
    */
-  async getWalletById(walletId: string): Promise<WalletOwnerResponse> {
+  async getWalletById(walletId: WalletId): Promise<WalletOwnerResponse> {
     let wallet: WalletOwnerResponse | null;
 
     /**
@@ -106,7 +108,7 @@ export class WalletsService {
      */
     try {
       wallet = await this.prisma.wallet.findUnique({
-        where: { id: walletId },
+        where: { id: walletId.value },
         select: {
           id: true,
           balance: true,
@@ -127,7 +129,9 @@ export class WalletsService {
 
     // The wallet is not found in the database, throw a NotFoundException to inform the admin that the wallet with the specified ID does not exist.
     if (!wallet) {
-      throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+      throw new NotFoundException(
+        `Wallet with ID:${walletId.toString()} does not exist.`,
+      );
     }
     return wallet;
   }
@@ -178,16 +182,18 @@ export class WalletsService {
   /*
     Admin-only: Freeze a wallet. The wallet can not transact
    */
-  async deactiveWallet(walletId: string): Promise<WalletOwnerResponse> {
+  async deactiveWallet(walletId: WalletId): Promise<WalletOwnerResponse> {
     const existingWallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId },
+      where: { id: walletId.value },
       select: {
         isActive: true,
       },
     });
 
     if (!existingWallet) {
-      throw new NotFoundException(`Wallet wiht ID:${walletId} is not exist`);
+      throw new NotFoundException(
+        `Wallet wiht ID:${walletId.toString()} is not exist`,
+      );
     }
     if (!existingWallet.isActive) {
       throw new ConflictException('Wallet is already deactived');
@@ -196,7 +202,7 @@ export class WalletsService {
     // Update the wallet's isActive status to false, so it can no longer be used for trnasactions.
     try {
       const wallet = await this.prisma.wallet.update({
-        where: { id: walletId },
+        where: { id: walletId.value },
         data: { isActive: false },
         select: {
           id: true,
@@ -225,16 +231,18 @@ export class WalletsService {
   /*
     Admin-only: Freeze a wallet. The wallet can not transact
    */
-  async activeWallet(walletId: string): Promise<WalletOwnerResponse> {
+  async activeWallet(walletId: WalletId): Promise<WalletOwnerResponse> {
     const existingWallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId },
+      where: { id: walletId.value },
       select: {
         isActive: true,
       },
     });
 
     if (!existingWallet) {
-      throw new NotFoundException(`Wallet wiht ID:${walletId} is not exist`);
+      throw new NotFoundException(
+        `Wallet wiht ID:${walletId.toString()} is not exist`,
+      );
     }
     if (existingWallet.isActive) {
       throw new ConflictException('Wallet is already actived');
@@ -243,7 +251,7 @@ export class WalletsService {
     // Update the wallet's isActive status to true, so it can be used for trnasactions again.
     try {
       const wallet = await this.prisma.wallet.update({
-        where: { id: walletId },
+        where: { id: walletId.value },
         data: { isActive: true },
         select: {
           id: true,

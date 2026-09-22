@@ -21,6 +21,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Role } from 'generated/prisma/enums';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
+import { UserId } from 'src/domain/value-objects/user-id.vo';
+import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 
 /**
  * WalletsController manages all wallet-related endpoints, including retrieving wallet balances,
@@ -38,8 +40,9 @@ export class WalletsController {
   @Get('my-balance')
   @HttpCode(HttpStatus.OK)
   async getMyBalance(
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') rawUserId: string,
   ): Promise<WalletBalanceResponse> {
+    const userId = UserId.from(rawUserId);
     return this.walletsService.getMyBalance(userId);
   }
 
@@ -51,7 +54,8 @@ export class WalletsController {
   async getWalletById(
     @Param() params: WalletIdParam,
   ): Promise<WalletOwnerResponse> {
-    return this.walletsService.getWalletById(params.walletId);
+    const walletId = WalletId.from(params.walletId);
+    return this.walletsService.getWalletById(walletId);
   }
 
   // Endpoint for admin users to create a new system wallet
@@ -73,7 +77,8 @@ export class WalletsController {
   async activeWallet(
     @Param() params: WalletIdParam,
   ): Promise<WalletOwnerResponse> {
-    return this.walletsService.activeWallet(params.walletId);
+    const walletId = WalletId.from(params.walletId);
+    return this.walletsService.activeWallet(walletId);
   }
 
   // Endpoint for admin users to deactivate a wallet by wallet ID
@@ -84,6 +89,7 @@ export class WalletsController {
   async deactiveWallet(
     @Param() params: WalletIdParam,
   ): Promise<WalletOwnerResponse> {
-    return this.walletsService.deactiveWallet(params.walletId);
+    const walletId = WalletId.from(params.walletId);
+    return this.walletsService.deactiveWallet(walletId);
   }
 }
