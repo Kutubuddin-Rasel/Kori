@@ -1,4 +1,4 @@
-import { InvalidUserIdException } from '../exceptions/invalid-user-Id.exception';
+import { InvalidUserIdException } from '../exceptions/invalid-user-id.exception';
 import { UserId } from '../value-objects/user-id.vo';
 
 describe('UserId', () => {

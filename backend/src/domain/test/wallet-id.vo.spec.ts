@@ -1,4 +1,4 @@
-import { InvalidWalletIdException } from '../exceptions/invalid-wallet-Id.exception';
+import { InvalidWalletIdException } from '../exceptions/invalid-wallet-id.exception';
 import { WalletId } from '../value-objects/wallet-id.vo';
 
 describe('WalletId', () => {

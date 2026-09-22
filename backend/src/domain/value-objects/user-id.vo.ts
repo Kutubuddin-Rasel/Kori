@@ -1,4 +1,4 @@
-import { InvalidUserIdException } from '../exceptions/invalid-user-Id.exception';
+import { InvalidUserIdException } from '../exceptions/invalid-user-id.exception';
 
 /**
  * A Value Object representing a User's ID.
