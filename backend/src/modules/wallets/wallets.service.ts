@@ -282,7 +282,7 @@ export class WalletsService {
    * Pulls only the bytes necessary from the database.
    */
   async getWalletStateForTransaction(
-    walletId: string,
+    walletId: WalletId,
   ): Promise<WalletStateForTransaction> {
     let wallet: WalletStateForTransaction | null;
 
@@ -290,7 +290,7 @@ export class WalletsService {
     try {
       wallet = await this.prisma.wallet.findUnique({
         where: {
-          id: walletId,
+          id: walletId.value,
           isActive: true,
         },
         select: {
@@ -312,9 +312,39 @@ export class WalletsService {
 
     // The wallet is not found in the database, throw a NotFoundException to inform the caller that the wallet with the specified ID does not exist or is inactive.
     if (!wallet) {
-      throw new NotFoundException(`Wallet with ID:${walletId} does not exist.`);
+      throw new NotFoundException(
+        `Wallet with ID:${walletId.toString()} does not exist.`,
+      );
     }
 
     return wallet;
+  }
+
+  async getOwnWalletId(userId: UserId): Promise<WalletId> {
+    let wallet: { id: string } | null;
+
+    try {
+      wallet = await this.prisma.wallet.findUnique({
+        where: { userId: userId.value },
+        select: {
+          id: true,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to resolve wallet for user',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException('Failed to resolve wallet');
+    }
+
+    if (!wallet) {
+      throw new NotFoundException(
+        'No wallet found for this account. Contact support.',
+      );
+    }
+
+    return WalletId.from(wallet.id);
   }
 }
