@@ -1,4 +1,5 @@
 import { TransactionType } from 'src/domain/enums';
+import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 
 // Interface for defining the structure of ledger descriptions
 interface LedgerDescription {
@@ -61,16 +62,16 @@ const dynamicLedgerDescriptionStrategies: Record<
  */
 export function DynamicLedgerDescripton(
   type: TransactionType,
-  senderId: string,
-  receiverId: string,
+  senderId: WalletId,
+  receiverId: WalletId,
 ): LedgerDescription {
   const strategy = dynamicLedgerDescriptionStrategies[type];
 
   if (!strategy) {
     return {
-      debitDescription: `FallBack debit for ${type} against User ${receiverId}`,
-      creditDescription: `FallBack credit for ${type} from User ${senderId}`,
+      debitDescription: `FallBack debit for ${type} against User ${receiverId.toString()}`,
+      creditDescription: `FallBack credit for ${type} from User ${senderId.toString()}`,
     };
   }
-  return strategy(senderId, receiverId);
+  return strategy(senderId.value, receiverId.value);
 }

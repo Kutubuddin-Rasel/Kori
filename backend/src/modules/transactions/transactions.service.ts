@@ -13,7 +13,8 @@ import {
   TransactionValidationResponse,
 } from './interfaces/transaction-response.interface';
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
-import { Prisma, TransactionType, WalletType } from 'generated/prisma/client';
+import { Prisma, WalletType } from 'generated/prisma/client';
+import { TransactionType } from 'src/domain/enums';
 import { generateTrxId } from 'src/common/utils/trx-generator.util';
 import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
