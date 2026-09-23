@@ -45,7 +45,7 @@ export class WalletsService {
     try {
       // Get the wallet
       wallet = await this.prisma.wallet.findUnique({
-        where: { id: userId.value },
+        where: { userId: userId.value },
         select: {
           id: true,
           balance: true,
