@@ -14,7 +14,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
   'jwt-refresh',
 ) {
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly cookieService: CookieService,
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,

@@ -19,7 +19,7 @@ export class PrismaService
   private pool: Pool;
 
   // The constructor initializes the PrismaClient with the PostgreSQL adapter and sets up the connection pool
-  constructor(private readonly configService: ConfigService) {
+  constructor(configService: ConfigService) {
     const pool = new Pool({
       connectionString: configService.get<string>('DATABASE_URL'),
     });

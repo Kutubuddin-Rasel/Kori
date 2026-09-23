@@ -8,7 +8,7 @@ import { AccessTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
     // Call the super constructor with the JWT strategy options
