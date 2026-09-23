@@ -21,6 +21,7 @@ import { PrismaClient } from 'generated/prisma/client';
 import { WalletType } from 'src/domain/enums';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
+import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
@@ -346,5 +347,39 @@ export class WalletsService {
     }
 
     return WalletId.from(wallet.id);
+  }
+
+  async resolveWalletIdByPhone(phone: PhoneNumber): Promise<WalletId> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { phone: phone.value },
+        select: {
+          wallet: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      if (!user?.wallet) {
+        throw new NotFoundException('Recipient account not found.');
+      }
+
+      return WalletId.from(user.wallet.id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      this.logger.error(
+        'Failed to resolve wallet by phone number',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw new InternalServerErrorException(
+        'Failed to resolve recipient account',
+      );
+    }
   }
 }
