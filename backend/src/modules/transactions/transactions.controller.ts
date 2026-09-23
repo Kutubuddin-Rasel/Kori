@@ -16,6 +16,7 @@ import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { AddMoneyDto } from './dto/add-money.dto';
+import { UserId } from 'src/domain/value-objects/user-id.vo';
 
 /**
  * TransactionsController handles all transaction-related endpoints, including sending money,
@@ -34,50 +35,55 @@ export class TransactionsController {
   // Endpoint to send money from one user to another
   @Post('send')
   async sendMoney(
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: SendMoneyDto,
   ): Promise<TransactionResultResponse> {
+    const userId = UserId.from(rawUserId);
     return this.transactionsService.sendMoney(userId, dto, idempotencyKey);
   }
 
   // Endpoint for agents to cash in money to a user's wallet
   @Post('cash-in')
   async cashIn(
-    @CurrentUser('sub') agentId: string,
+    @CurrentUser('sub') rawAgentId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: CashInDto,
   ): Promise<TransactionResultResponse> {
+    const agentId = UserId.from(rawAgentId);
     return this.transactionsService.cashIn(agentId, dto, idempotencyKey);
   }
 
   // Endpoint for users to cash out money from their wallet
   @Post('cash-out')
   async cashOut(
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: CashOutDto,
   ): Promise<TransactionResultResponse> {
+    const userId = UserId.from(rawUserId);
     return this.transactionsService.cashOut(userId, dto, idempotencyKey);
   }
 
   // Endpoint for users to make payments to merchants or service providers
   @Post('payment')
   async payment(
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: PaymentDto,
   ): Promise<TransactionResultResponse> {
+    const userId = UserId.from(rawUserId);
     return this.transactionsService.payment(userId, dto, idempotencyKey);
   }
 
   // Endpoint for users to add money to their wallet using linked bank accounts or cards
   @Post('add-money')
   async addMoney(
-    @CurrentUser('sub') userId: string,
+    @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
     @Body() dto: AddMoneyDto,
   ): Promise<TransactionResultResponse> {
+    const userId = UserId.from(rawUserId);
     return this.transactionsService.addMoney(userId, dto, idempotencyKey);
   }
 }
