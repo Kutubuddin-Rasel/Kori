@@ -4,6 +4,5 @@ export class InsufficientFundsException extends Error {
       `Insufficient funds: wallet has ${available}, but ${required} is required`,
     );
     this.name = InsufficientFundsException.name;
-    Object.setPrototypeOf(this, InsufficientFundsException.prototype);
   }
 }
