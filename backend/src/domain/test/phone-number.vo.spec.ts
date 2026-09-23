@@ -30,4 +30,12 @@ describe('PhoneNumber', () => {
       InvalidPhoneNumberException,
     );
   });
+
+  it('preserves the domain exception type', () => {
+    const error = new InvalidPhoneNumberException('invalid');
+
+    expect(error).toBeInstanceOf(InvalidPhoneNumberException);
+
+    expect(error).toBeInstanceOf(Error);
+  });
 });
