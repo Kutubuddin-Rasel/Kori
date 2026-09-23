@@ -17,7 +17,7 @@ export class PhoneNumber {
       throw new InvalidPhoneNumberException('Invalid Bangladeshi phone number');
     }
 
-    return new PhoneNumber(value);
+    return new PhoneNumber(parsed.number);
   }
 
   get value(): string {
