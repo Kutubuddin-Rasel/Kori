@@ -18,6 +18,7 @@ import { StringValue } from 'ms';
 import { AccountStatus, User } from '../../../generated/prisma/client';
 import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
+import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 
 @Injectable()
 export class AuthService {
@@ -47,7 +48,8 @@ export class AuthService {
   async register(
     authCredentialDto: AuthCredentialsDto,
   ): Promise<TokensResponse> {
-    const { phone, pin, deviceId } = authCredentialDto;
+    const { pin, deviceId } = authCredentialDto;
+    const phone = PhoneNumber.from(authCredentialDto.phone).value;
 
     // Check if user has clearance to register
     const clearanceKey = `register_clearance:${phone}`;
