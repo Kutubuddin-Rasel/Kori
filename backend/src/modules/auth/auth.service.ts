@@ -114,7 +114,8 @@ export class AuthService {
 
   // Login user
   async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
-    const { phone, deviceId, pin } = authCredentialDto;
+    const { deviceId, pin } = authCredentialDto;
+    const phone = PhoneNumber.from(authCredentialDto.phone).value;
 
     // Check if user is registered
     const user = await this.prisma.user.findUnique({

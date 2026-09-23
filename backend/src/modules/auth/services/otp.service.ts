@@ -13,6 +13,7 @@ import {
   VerifyOtpResponse,
 } from '../interfaces/auth.interface';
 import { VerifyOtpDto } from '../dto/verify-otp.dto';
+import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 
 @Injectable()
 export class OtpService {
@@ -32,7 +33,7 @@ export class OtpService {
   // For development purposes only - generates a random 4-digit OTP and stores it in Redis with a TTL.
   // In production, integrate with an SMS gateway to send the OTP to the user's phone.
   async sendOtp(sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
-    const { phone } = sendOtpDto;
+    const phone = PhoneNumber.from(sendOtpDto.phone).value;
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     const redisKey = `otp:${phone}`;
@@ -56,7 +57,9 @@ export class OtpService {
 
   // Verifies the OTP provided by the user
   async verifyOtp(VerifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
-    const { phone, otp, deviceId } = VerifyOtpDto;
+    const { otp, deviceId } = VerifyOtpDto;
+
+    const phone = PhoneNumber.from(VerifyOtpDto.phone).value;
     const redisKey = `otp:${phone}`;
     const storedOtp = await this.redisService.get<string>(redisKey);
 
