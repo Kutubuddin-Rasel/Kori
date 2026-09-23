@@ -12,8 +12,8 @@ interface LedgerDescription {
  * Define a strict fucntion signature that every transaction type must follow.
  */
 type LedgerDescriptionStrategy = (
-  senderId: string,
-  receiverId: string,
+  senderWalletId: string,
+  receiverWalletId: string,
 ) => LedgerDescription;
 
 /**
@@ -60,7 +60,7 @@ const dynamicLedgerDescriptionStrategies: Record<
  * @param receiverId - The ID of the receiver involved in the transaction
  * @returns - An object containing the debit and credit descriptions for the ledger entry based on the transaction type.
  */
-export function DynamicLedgerDescripton(
+export function DynamicLedgerDescription(
   type: TransactionType,
   senderId: WalletId,
   receiverId: WalletId,

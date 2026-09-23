@@ -21,7 +21,7 @@ import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { AddMoneyDto } from './dto/add-money.dto';
-import { DynamicLedgerDescripton } from 'src/common/utils/dynamic-ledger-description.util';
+import { DynamicLedgerDescription } from 'src/common/utils/dynamic-ledger-description.util';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
@@ -474,11 +474,8 @@ export class TransactionsService implements OnModuleInit {
         // 4. DOUBLE-ENTRY LEDGER & WALLET UPDATES
         // -----------------------------------------------------------------
         // Get dynamic ledger description based on transaction type and involved parties to enhance the clarity of ledger entries for auditing and user transaction history purposes
-        const { debitDescription, creditDescription } = DynamicLedgerDescripton(
-          type,
-          senderWalletId,
-          receiverWalletId,
-        );
+        const { debitDescription, creditDescription } =
+          DynamicLedgerDescription(type, senderWalletId, receiverWalletId);
 
         // Update Sender (Atomic Decrement) - The sender's wallet balance is decremented by the total required amount (transfer amount + fee), and a corresponding ledger entry is created to reflect the debit.
         const updatedSender = await tsx.wallet.update({
