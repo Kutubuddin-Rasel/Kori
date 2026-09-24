@@ -64,6 +64,19 @@ describe('Money', () => {
     expect(moneyB.isLessThan(moneyA)).toBe(true);
   });
 
+  it('reports positive money', () => {
+    const money = Money.fromMinorUnits(1n);
+
+    expect(money.isPositive()).toBe(true);
+  });
+
+  it('does not treat different amounts as equal', () => {
+    const a = Money.fromMinorUnits(100n);
+    const b = Money.fromMinorUnits(101n);
+
+    expect(a.equals(b)).toBe(false);
+  });
+
   it('preserves the domain exception type', () => {
     const error = new InvalidMoneyException('invalid');
     expect(error).toBeInstanceOf(InvalidMoneyException);
