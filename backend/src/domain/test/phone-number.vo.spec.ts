@@ -2,7 +2,7 @@ import { InvalidPhoneNumberException } from '../exceptions/invalid-phone-number.
 import { PhoneNumber } from '../value-objects/phone-number.vo';
 
 describe('PhoneNumber', () => {
-  it('normalizes a local Bangaldeshi phone number to E.164', () => {
+  it('normalizes a local Bangladeshi phone number to E.164', () => {
     const phone = PhoneNumber.from('01712345678');
     expect(phone.value).toBe('+8801712345678');
   });

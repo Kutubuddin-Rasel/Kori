@@ -1,21 +1,18 @@
 import {
   IsNotEmpty,
-  IsNumberString,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
 export class BaseTransactionDto {
-  @IsNumberString(
-    { no_symbols: true },
-    {
-      message:
-        'Amount must be a strictly positive integer without decimals (measured in Poisha)',
-    },
-  )
+  @Matches(/^[1-9]\d*$/, {
+    message:
+      'Amount must be a strictly positive integer without decimals (measured in Poisha)',
+  })
   @IsNotEmpty()
-  amount: string = '';
+  amountMinorUnits: string = '';
 
   @IsString()
   @IsOptional()

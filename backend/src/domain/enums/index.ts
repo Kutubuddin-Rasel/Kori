@@ -37,3 +37,7 @@ export enum EntryType {
   DEBIT = 'DEBIT',
   CREDIT = 'CREDIT',
 }
+
+export enum Currency {
+  BDT = 'BDT',
+}
