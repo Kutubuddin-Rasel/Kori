@@ -1,6 +1,8 @@
 import { TransactionType } from 'src/domain/enums';
+import { Money } from 'src/domain/value-objects/money.vo';
+import { divideRoundHlafEven } from './round-half-even';
 // Interface for defining the structure of ledger descriptions
-type FeeStrategy = (amount: bigint) => bigint;
+type FeeStrategy = (amount: Money) => Money;
 
 /**
  * The Configuration Dictionary
@@ -9,11 +11,12 @@ type FeeStrategy = (amount: bigint) => bigint;
  * This allows for easy addition of new transaction types and their fee logic without modifying existing code.
  */
 const feeStrategies: Record<TransactionType, FeeStrategy> = {
-  [TransactionType.SEND_MONEY]: () => 500n,
-  [TransactionType.CASH_OUT]: (amount) => (amount * 185n) / 10000n,
-  [TransactionType.CASH_IN]: () => 0n,
-  [TransactionType.PAYMENT]: () => 0n,
-  [TransactionType.ADD_MONEY]: () => 0n,
+  [TransactionType.SEND_MONEY]: () => Money.fromMinorUnits(500n),
+  [TransactionType.CASH_OUT]: (amount) =>
+    Money.fromMinorUnits(divideRoundHlafEven(amount.minorUnits * 185n, 10000n)),
+  [TransactionType.CASH_IN]: () => Money.zero(),
+  [TransactionType.PAYMENT]: () => Money.zero(),
+  [TransactionType.ADD_MONEY]: () => Money.zero(),
 };
 
 /**
@@ -26,7 +29,7 @@ const feeStrategies: Record<TransactionType, FeeStrategy> = {
  * @param type - The type of transaction for which the fee is being calculated
  * @returns - The calculated fee as a bigint based on the transaction type and amount.
  */
-export function calculateFee(amount: bigint, type: TransactionType): bigint {
+export function calculateFee(amount: Money, type: TransactionType): Money {
   const strategy = feeStrategies[type];
   if (!strategy) {
     throw new Error(
