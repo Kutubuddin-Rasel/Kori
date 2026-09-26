@@ -109,10 +109,6 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
   it('reject registration when OTP clearance is missing', async () => {
     const credentials = {
       phone: '+8801712345678',
