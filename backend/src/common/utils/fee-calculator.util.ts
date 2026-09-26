@@ -1,6 +1,6 @@
 import { TransactionType } from 'src/domain/enums';
 import { Money } from 'src/domain/value-objects/money.vo';
-import { divideRoundHlafEven } from './round-half-even';
+import { divideRoundHalfEven } from './round-half-even';
 // Interface for defining the structure of ledger descriptions
 type FeeStrategy = (amount: Money) => Money;
 
@@ -11,12 +11,16 @@ type FeeStrategy = (amount: Money) => Money;
  * This allows for easy addition of new transaction types and their fee logic without modifying existing code.
  */
 const feeStrategies: Record<TransactionType, FeeStrategy> = {
-  [TransactionType.SEND_MONEY]: () => Money.fromMinorUnits(500n),
+  [TransactionType.SEND_MONEY]: (amount) =>
+    Money.fromMinorUnits(500n, amount.currency),
   [TransactionType.CASH_OUT]: (amount) =>
-    Money.fromMinorUnits(divideRoundHlafEven(amount.minorUnits * 185n, 10000n)),
-  [TransactionType.CASH_IN]: () => Money.zero(),
-  [TransactionType.PAYMENT]: () => Money.zero(),
-  [TransactionType.ADD_MONEY]: () => Money.zero(),
+    Money.fromMinorUnits(
+      divideRoundHalfEven(amount.minorUnits * 185n, 10000n),
+      amount.currency,
+    ),
+  [TransactionType.CASH_IN]: (amount) => Money.zero(amount.currency),
+  [TransactionType.PAYMENT]: (amount) => Money.zero(amount.currency),
+  [TransactionType.ADD_MONEY]: (amount) => Money.zero(amount.currency),
 };
 
 /**

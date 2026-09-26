@@ -384,7 +384,7 @@ export class TransactionsService implements OnModuleInit {
    * It returns an object containing the transfer amount, fee amount, and total required amount, which can be used for further validation and processing of the transaction.
    * @param amountMinorUnits - The amount involved in the transaction (as a string)
    * @param type - The type of transaction for which the fee is being calculated
-   * @returns - An object containing transferAmount, feeAmount, and totalRequiredAmount as bigints
+   * @returns - An object containing transferAmount, feeAmount, and totalRequiredAmount as Money
    */
   private calculateTransferMath(
     amountMinorUnits: string,

@@ -1,16 +1,16 @@
-export function divideRoundHlafEven(
+export function divideRoundHalfEven(
   numerator: bigint,
   denominator: bigint,
 ): bigint {
   const division = numerator / denominator;
-  const reminder = numerator % denominator;
-  const doubleReminder = reminder * 2n;
+  const remainder = numerator % denominator;
+  const doubleRemainder = remainder * 2n;
 
-  if (doubleReminder < denominator) {
+  if (doubleRemainder < denominator) {
     return division;
   }
 
-  if (doubleReminder > denominator) {
+  if (doubleRemainder > denominator) {
     return division + 1n;
   }
 
