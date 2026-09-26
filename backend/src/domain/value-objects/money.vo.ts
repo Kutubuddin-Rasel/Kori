@@ -3,10 +3,8 @@ import { InvalidMoneyException } from '../exceptions/invalid-money.exception';
 
 export class Money {
   /**
-   * PostgreSQL BIGINT maximum
-   * Prisma BigInt is persisted as PostgreSQL BIGINT,
-   * so the domain must never create a monetary value
-   * that persistence cannot represent.
+   * Maximum monetary amount supported by Kori's
+   * signed 64-bit minor-unit representation.
    */
   private static readonly MAX_MINOR_UNITS = 9_223_372_036_854_775_807n;
 
@@ -67,6 +65,10 @@ export class Money {
   isLessThan(other: Money): boolean {
     this.ensureSameCurrency(other);
     return this.amountMinorUnits < other.amountMinorUnits;
+  }
+
+  toString(): string {
+    return this.minorUnits.toString();
   }
 
   private ensureSameCurrency(other: Money): void {
