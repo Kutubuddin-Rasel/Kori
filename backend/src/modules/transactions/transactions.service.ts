@@ -10,7 +10,7 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import {
   TransactionResultResponse,
-  TransactionValidationResponse,
+  TransactionAmounts,
 } from './interfaces/transaction-response.interface';
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
 import { Prisma, WalletType } from 'generated/prisma/client';
@@ -25,6 +25,7 @@ import { DynamicLedgerDescription } from 'src/common/utils/dynamic-ledger-descri
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
+import { Money } from 'src/domain/value-objects/money.vo';
 
 /**
  * TransactionsService is responsible for handling all financial transactions in the system, including:
@@ -84,7 +85,7 @@ export class TransactionsService implements OnModuleInit {
     dto: SendMoneyDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, recipientPhone, reference } = dto;
+    const { amountMinorUnits, recipientPhone, reference } = dto;
 
     const recipientPhoneNumber = PhoneNumber.from(recipientPhone);
 
@@ -94,7 +95,10 @@ export class TransactionsService implements OnModuleInit {
     ]);
 
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const math = this.calculateTransferMath(amount, TransactionType.SEND_MONEY);
+    const amounts = this.calculateTransferMath(
+      amountMinorUnits,
+      TransactionType.SEND_MONEY,
+    );
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -102,7 +106,7 @@ export class TransactionsService implements OnModuleInit {
       receiverWalletId,
       WalletType.PERSONAL,
       WalletType.PERSONAL,
-      math.totalRequiredAmount,
+      amounts.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -110,9 +114,9 @@ export class TransactionsService implements OnModuleInit {
       senderWalletId,
       receiverWalletId,
       this.cachedSystemWalletId,
-      math.transferAmount,
-      math.totalRequiredAmount,
-      math.feeAmount,
+      amounts.transferAmount,
+      amounts.totalRequiredAmount,
+      amounts.feeAmount,
       TransactionType.SEND_MONEY,
       idempotencyKey,
       reference,
@@ -130,7 +134,7 @@ export class TransactionsService implements OnModuleInit {
     dto: CashInDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, customerPhone, reference } = dto;
+    const { amountMinorUnits, customerPhone, reference } = dto;
 
     const customerPhoneNumber = PhoneNumber.from(customerPhone);
 
@@ -140,7 +144,10 @@ export class TransactionsService implements OnModuleInit {
     ]);
 
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const math = this.calculateTransferMath(amount, TransactionType.CASH_IN);
+    const amounts = this.calculateTransferMath(
+      amountMinorUnits,
+      TransactionType.CASH_IN,
+    );
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -148,7 +155,7 @@ export class TransactionsService implements OnModuleInit {
       receiverWalletId,
       WalletType.AGENT,
       WalletType.PERSONAL,
-      math.totalRequiredAmount,
+      amounts.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -156,9 +163,9 @@ export class TransactionsService implements OnModuleInit {
       agentWalletId,
       receiverWalletId,
       this.cachedSystemWalletId,
-      math.transferAmount,
-      math.totalRequiredAmount,
-      math.feeAmount,
+      amounts.transferAmount,
+      amounts.totalRequiredAmount,
+      amounts.feeAmount,
       TransactionType.CASH_IN,
       idempotencyKey,
       reference,
@@ -176,7 +183,7 @@ export class TransactionsService implements OnModuleInit {
     dto: CashOutDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, agentPhone, reference } = dto;
+    const { amountMinorUnits, agentPhone, reference } = dto;
 
     const agentPhoneNumber = PhoneNumber.from(agentPhone);
 
@@ -186,7 +193,10 @@ export class TransactionsService implements OnModuleInit {
     ]);
 
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const math = this.calculateTransferMath(amount, TransactionType.CASH_OUT);
+    const amounts = this.calculateTransferMath(
+      amountMinorUnits,
+      TransactionType.CASH_OUT,
+    );
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -194,7 +204,7 @@ export class TransactionsService implements OnModuleInit {
       agentWalletId,
       WalletType.PERSONAL,
       WalletType.AGENT,
-      math.totalRequiredAmount,
+      amounts.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -202,9 +212,9 @@ export class TransactionsService implements OnModuleInit {
       customerWalletId,
       agentWalletId,
       this.cachedSystemWalletId,
-      math.transferAmount,
-      math.totalRequiredAmount,
-      math.feeAmount,
+      amounts.transferAmount,
+      amounts.totalRequiredAmount,
+      amounts.feeAmount,
       TransactionType.CASH_OUT,
       idempotencyKey,
       reference,
@@ -222,7 +232,7 @@ export class TransactionsService implements OnModuleInit {
     dto: PaymentDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, merchantPhone, invoiceNumber, reference } = dto;
+    const { amountMinorUnits, merchantPhone, invoiceNumber, reference } = dto;
 
     const merchantPhoneNumber = PhoneNumber.from(merchantPhone);
 
@@ -232,7 +242,10 @@ export class TransactionsService implements OnModuleInit {
     ]);
 
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const math = this.calculateTransferMath(amount, TransactionType.PAYMENT);
+    const amounts = this.calculateTransferMath(
+      amountMinorUnits,
+      TransactionType.PAYMENT,
+    );
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -240,7 +253,7 @@ export class TransactionsService implements OnModuleInit {
       merchantWlletId,
       WalletType.PERSONAL,
       WalletType.MERCHANT,
-      math.totalRequiredAmount,
+      amounts.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -248,9 +261,9 @@ export class TransactionsService implements OnModuleInit {
       customerWalletId,
       merchantWlletId,
       this.cachedSystemWalletId,
-      math.transferAmount,
-      math.totalRequiredAmount,
-      math.feeAmount,
+      amounts.transferAmount,
+      amounts.totalRequiredAmount,
+      amounts.feeAmount,
       TransactionType.PAYMENT,
       idempotencyKey,
       reference || invoiceNumber,
@@ -272,13 +285,16 @@ export class TransactionsService implements OnModuleInit {
     dto: AddMoneyDto,
     idempotencyKey: string,
   ): Promise<TransactionResultResponse> {
-    const { amount, bankGatewayToken, reference } = dto;
+    const { amountMinorUnits, bankGatewayToken, reference } = dto;
 
     const receiverWalletId =
       await this.walletsService.getOwnWalletId(actorUserId);
 
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const math = this.calculateTransferMath(amount, TransactionType.ADD_MONEY);
+    const amounts = this.calculateTransferMath(
+      amountMinorUnits,
+      TransactionType.ADD_MONEY,
+    );
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -286,7 +302,7 @@ export class TransactionsService implements OnModuleInit {
       receiverWalletId,
       WalletType.SYSTEM,
       WalletType.PERSONAL,
-      math.totalRequiredAmount,
+      amounts.totalRequiredAmount,
     );
 
     // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
@@ -294,9 +310,9 @@ export class TransactionsService implements OnModuleInit {
       this.cachedSystemWalletId,
       receiverWalletId,
       this.cachedSystemWalletId,
-      math.transferAmount,
-      math.totalRequiredAmount,
-      math.feeAmount,
+      amounts.transferAmount,
+      amounts.totalRequiredAmount,
+      amounts.feeAmount,
       TransactionType.ADD_MONEY,
       idempotencyKey,
       reference || bankGatewayToken,
@@ -321,7 +337,7 @@ export class TransactionsService implements OnModuleInit {
     receiverWalletId: WalletId,
     expectedSenderType: WalletType,
     expectedReceiverType: WalletType,
-    totalRequiredAmount: bigint,
+    totalRequiredAmount: Money,
   ): Promise<void> {
     // Check if sender and receiver are the same
     if (senderWalletId.equals(receiverWalletId)) {
@@ -355,8 +371,9 @@ export class TransactionsService implements OnModuleInit {
       );
     }
 
+    const senderBalance = Money.fromMinorUnits(senderWallet.balance);
     // Check if sender has sufficient funds
-    if (senderWallet.balance < totalRequiredAmount) {
+    if (senderBalance.isLessThan(totalRequiredAmount)) {
       throw new BadRequestException('Insufficient funds');
     }
   }
@@ -365,18 +382,18 @@ export class TransactionsService implements OnModuleInit {
    * Calculates the transfer amount, fee amount, and total required amount for a transaction based on the provided amount and transaction type.
    * This method uses the calculateFee utility function to determine the fee based on the transaction type and amount.
    * It returns an object containing the transfer amount, fee amount, and total required amount, which can be used for further validation and processing of the transaction.
-   * @param amount - The amount involved in the transaction (as a string)
+   * @param amountMinorUnits - The amount involved in the transaction (as a string)
    * @param type - The type of transaction for which the fee is being calculated
    * @returns - An object containing transferAmount, feeAmount, and totalRequiredAmount as bigints
    */
   private calculateTransferMath(
-    amount: string,
+    amountMinorUnits: string,
     type: TransactionType,
-  ): TransactionValidationResponse {
+  ): TransactionAmounts {
     // Calculate fee and total required amount
-    const transferAmount = BigInt(amount);
+    const transferAmount = Money.fromMinorUnits(BigInt(amountMinorUnits));
     const feeAmount = calculateFee(transferAmount, type);
-    const totalRequiredAmount = transferAmount + feeAmount;
+    const totalRequiredAmount = transferAmount.add(feeAmount);
     return {
       transferAmount,
       feeAmount,
@@ -397,9 +414,9 @@ export class TransactionsService implements OnModuleInit {
     senderWalletId: WalletId,
     receiverWalletId: WalletId,
     systemWalletId: WalletId,
-    transferAmount: bigint,
-    totalRequiredAmount: bigint,
-    feeAmount: bigint,
+    transferAmount: Money,
+    totalRequiredAmount: Money,
+    feeAmount: Money,
     type: TransactionType,
     idempotencyKey: string,
     reference?: string,
@@ -446,7 +463,8 @@ export class TransactionsService implements OnModuleInit {
         }
 
         // Check if sender has sufficient funds after acquiring locks to prevent issues with concurrent transactions that may have modified the sender's balance before locks were acquired
-        if (lockedSender.balance < totalRequiredAmount) {
+        const lockedSenderBalance = Money.fromMinorUnits(lockedSender.balance);
+        if (lockedSenderBalance.isLessThan(totalRequiredAmount)) {
           throw new BadRequestException('Insufficient funds');
         }
 
@@ -462,8 +480,8 @@ export class TransactionsService implements OnModuleInit {
             idempotencyKey,
             type,
             status: 'COMPLETED',
-            amount: transferAmount,
-            fee: feeAmount,
+            amount: transferAmount.minorUnits,
+            fee: feeAmount.minorUnits,
             reference,
             senderWalletId: senderWalletId.value,
             receiverWalletId: receiverWalletId.value,
@@ -480,7 +498,7 @@ export class TransactionsService implements OnModuleInit {
         // Update Sender (Atomic Decrement) - The sender's wallet balance is decremented by the total required amount (transfer amount + fee), and a corresponding ledger entry is created to reflect the debit.
         const updatedSender = await tsx.wallet.update({
           where: { id: senderWalletId.value },
-          data: { balance: { decrement: totalRequiredAmount } },
+          data: { balance: { decrement: totalRequiredAmount.minorUnits } },
         });
 
         // Create ledger entry for sender's debit transaction. This entry provides a clear record of the amount debited from the sender's wallet, the resulting balance after the transaction, and a description for auditing and user transaction history purposes.
@@ -489,7 +507,7 @@ export class TransactionsService implements OnModuleInit {
             transactionId: transactionRecord.id,
             walletId: senderWalletId.value,
             type: 'DEBIT',
-            amount: totalRequiredAmount,
+            amount: totalRequiredAmount.minorUnits,
             balanceAfter: updatedSender.balance,
             description: debitDescription,
           },
@@ -498,7 +516,7 @@ export class TransactionsService implements OnModuleInit {
         // Update Receiver (Atomic increment) - The receiver's wallet balance is incremented by the transfer amount, and a corresponding ledger entry is created to reflect the credit.
         const updatedReceiver = await tsx.wallet.update({
           where: { id: receiverWalletId.value },
-          data: { balance: { increment: transferAmount } },
+          data: { balance: { increment: transferAmount.minorUnits } },
         });
 
         // Create ledger entry for receiver's credit transaction. This entry provides a clear record of the amount credited to the receiver's wallet, the resulting balance after the transaction, and a description for auditing and user transaction history purposes.
@@ -507,7 +525,7 @@ export class TransactionsService implements OnModuleInit {
             transactionId: transactionRecord.id,
             walletId: receiverWalletId.value,
             type: 'CREDIT',
-            amount: transferAmount,
+            amount: transferAmount.minorUnits,
             balanceAfter: updatedReceiver.balance,
             description: creditDescription,
           },
@@ -515,10 +533,10 @@ export class TransactionsService implements OnModuleInit {
 
         // TODO (Performance) : Extract System Wallet update to a batched async chronometer to prevent Hot Row connection at extreme scale
         // Update System Revenue (If Fee exists) - If there is a fee involved in the transaction, the system wallet balance is incremented by the fee amount
-        if (feeAmount > 0n) {
+        if (!feeAmount.isZero()) {
           const updatedSystem = await tsx.wallet.update({
             where: { id: systemWalletId.value },
-            data: { balance: { increment: feeAmount } },
+            data: { balance: { increment: feeAmount.minorUnits } },
           });
 
           // Create ledger entry for system wallet's credit transaction to record the fee collection. This entry provides a clear record of the fee amount credited to the system wallet, the resulting balance after the transaction, and a description for auditing and financial reporting purposes.
@@ -527,7 +545,7 @@ export class TransactionsService implements OnModuleInit {
               transactionId: transactionRecord.id,
               walletId: systemWalletId.value,
               type: 'CREDIT',
-              amount: feeAmount,
+              amount: feeAmount.minorUnits,
               balanceAfter: updatedSystem.balance,
               description: `Fee collection for TRX ${transactionRecord.trxId}`,
             },
