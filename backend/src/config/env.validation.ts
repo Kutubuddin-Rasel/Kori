@@ -1,4 +1,4 @@
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, Transform } from 'class-transformer';
 import {
   IsEnum,
   IsNotEmpty,
@@ -68,10 +68,12 @@ class EnvironmentVariables {
   CLEARANCE_TTL: number = 300;
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   IDEMPOTENCY_TTL_SECONDS: number = 86400;
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   PROCESSING_TTL_SECONDS: number = 30;
 }
