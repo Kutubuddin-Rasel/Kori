@@ -1,7 +1,7 @@
 services:
   # PostgreSQL
   postgres_db:
-    image: postgres:16
+    image: postgres:18
     container_name: kori_postgres
     env_file:
       - ./backend/.env
@@ -13,7 +13,7 @@ services:
     ports:
       - "${DATABASE_PORT}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${DATABASE_USER}" ]
       interval: 10s
@@ -22,7 +22,7 @@ services:
 
   #Redis
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.10.2-alpine
     container_name: kori_redis
     env_file:
       - ./backend/.env
@@ -38,18 +38,6 @@ services:
       timeout: 5s
       retries: 5
 
-  #RedisInsight (Visula GUI for Redis)
-  redis_insight:
-    image: redis/redisinsight:latest
-    container_name: kori_redis_insight
-    env_file:
-      - ./backend/.env
-    restart: always
-    ports:
-      - "${REDIS_INSIGHT_PORT}:5540"
-    depends_on:
-      - redis
-
   #Mailpit(The local OTP catcher)
   mailpit:
     image: axllent/mailpit:latest
@@ -64,7 +52,7 @@ services:
 
 
 volumes:
-  postgres_data:
+  postgres18_data:
     driver: local
   redis_data:
     driver: local
