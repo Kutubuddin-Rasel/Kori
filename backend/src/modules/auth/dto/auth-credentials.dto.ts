@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsPhoneNumber, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsPhoneNumber, IsString, Matches } from 'class-validator';
 
 export class AuthCredentialsDto {
   @IsNotEmpty()
@@ -7,7 +7,9 @@ export class AuthCredentialsDto {
 
   @IsNotEmpty()
   @IsString()
-  @Length(4, 5, { message: 'PIN must be 4 or 5 digits' })
+  @Matches(/^[0-9]{4,5}$/, {
+    message: 'PIN must be 4 or 5 numeric digits',
+  })
   pin: string = '';
 
   @IsNotEmpty()
