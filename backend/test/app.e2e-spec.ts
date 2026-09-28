@@ -62,4 +62,21 @@ describe('Application bootstrap (e2e)', () => {
       expect.arrayContaining(['property unexpectedField should not exist']),
     );
   });
+
+  it('does not expose an unverified public Add Money route', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/transactions/add-money')
+      .send({
+        amountMinorUnits: '10000',
+        bankGatewayToken: 'client-claimed-payment',
+      })
+      .expect(404);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        success: false,
+        path: '/api/v1/transactions/add-money',
+      }),
+    );
+  });
 });
