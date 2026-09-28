@@ -20,7 +20,6 @@ import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
-import { AddMoneyDto } from './dto/add-money.dto';
 import { DynamicLedgerDescription } from 'src/common/utils/dynamic-ledger-description.util';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
@@ -267,55 +266,6 @@ export class TransactionsService implements OnModuleInit {
       TransactionType.PAYMENT,
       idempotencyKey,
       reference || invoiceNumber,
-    );
-  }
-
-  /*
-  * Strict Rule : The Sender is the System Wallet. The Receiver must be personal
-  * This endpoint allows users to add money to their personal wallets through external bank gateways. 
-  * It validates the transaction based on business rules, calculates fees, and executes the transfer within an ACID-compliant transaction block to ensure data integrity.
-  * TODO (Architectural Roadmap):
-    1. This endpoint should eventually be converted to a Weebhook Receiver from Payment Gateway
-    2. It should only be triggerd by external providers (e.g. Stripe, SSLCommerz, etc)
-    3. Integrate a Velocity/Limits module here to enforce Daily/Monthly AML(Anti-Money Laundering) constraints
-    4. The Idempotency key must map directly to the Bank's external EventID to prevent duplicate transactions
-  */
-  async addMoney(
-    actorUserId: UserId,
-    dto: AddMoneyDto,
-    idempotencyKey: string,
-  ): Promise<TransactionResultResponse> {
-    const { amountMinorUnits, bankGatewayToken, reference } = dto;
-
-    const receiverWalletId =
-      await this.walletsService.getOwnWalletId(actorUserId);
-
-    // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
-    const amounts = this.calculateTransferMath(
-      amountMinorUnits,
-      TransactionType.ADD_MONEY,
-    );
-
-    // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
-    await this.assertTransferEligibility(
-      this.cachedSystemWalletId,
-      receiverWalletId,
-      WalletType.SYSTEM,
-      WalletType.PERSONAL,
-      amounts.totalRequiredAmount,
-    );
-
-    // Execute the transaction within an ACID-compliant block to ensure data integrity and consistency
-    return this.executeACIDTransfer(
-      this.cachedSystemWalletId,
-      receiverWalletId,
-      this.cachedSystemWalletId,
-      amounts.transferAmount,
-      amounts.totalRequiredAmount,
-      amounts.feeAmount,
-      TransactionType.ADD_MONEY,
-      idempotencyKey,
-      reference || bankGatewayToken,
     );
   }
 

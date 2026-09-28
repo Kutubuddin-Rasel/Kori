@@ -15,7 +15,6 @@ import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
-import { AddMoneyDto } from './dto/add-money.dto';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 
 /**
@@ -74,16 +73,5 @@ export class TransactionsController {
   ): Promise<TransactionResultResponse> {
     const userId = UserId.from(rawUserId);
     return this.transactionsService.payment(userId, dto, idempotencyKey);
-  }
-
-  // Endpoint for users to add money to their wallet using linked bank accounts or cards
-  @Post('add-money')
-  async addMoney(
-    @CurrentUser('sub') rawUserId: string,
-    @Headers('x-idempotency-key') idempotencyKey: string,
-    @Body() dto: AddMoneyDto,
-  ): Promise<TransactionResultResponse> {
-    const userId = UserId.from(rawUserId);
-    return this.transactionsService.addMoney(userId, dto, idempotencyKey);
   }
 }
