@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsPhoneNumber, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsPhoneNumber, IsString, Matches } from 'class-validator';
 
 export class VerifyOtpDto {
   @IsNotEmpty()
@@ -7,7 +7,9 @@ export class VerifyOtpDto {
 
   @IsNotEmpty()
   @IsString()
-  @Length(4, 4, { message: 'Otp must be exactly 4 digits' })
+  @Matches(/^[0-9]{4}$/, {
+    message: 'Otp must be exactly 4 digits',
+  })
   otp: string = '';
 
   @IsNotEmpty()
