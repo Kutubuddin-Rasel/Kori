@@ -20,6 +20,7 @@ export class OtpService {
   private readonly logger = new Logger(OtpService.name);
   private readonly OTP_TTL: number;
   private readonly CLEARANCE_TTL: number;
+  private readonly isDevelopment: boolean;
 
   constructor(
     private readonly configService: ConfigService,
@@ -28,6 +29,8 @@ export class OtpService {
   ) {
     this.OTP_TTL = this.configService.getOrThrow<number>('OTP_TIME_LIMIT');
     this.CLEARANCE_TTL = this.configService.getOrThrow<number>('CLEARANCE_TTL');
+    this.isDevelopment =
+      this.configService.getOrThrow<string>('NODE_ENV') === 'development';
   }
 
   // For development purposes only - generates a random 4-digit OTP and stores it in Redis with a TTL.
@@ -48,7 +51,12 @@ export class OtpService {
       );
     }
 
-    this.logger.log(`[DEVELOPMENT ONLY] OTP for ${phone} is: ${otp}`);
+    if (this.isDevelopment) {
+      const maskedPhone = phone.slice(-4);
+      this.logger.debug(
+        `[DEVELOPMENT ONLY] OTP for phone ending ${maskedPhone} is: ${otp}`,
+      );
+    }
     return {
       message: 'OTP sent successfully. It will expire in 3 minutes.',
       expiresIn: this.OTP_TTL,
