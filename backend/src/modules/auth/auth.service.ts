@@ -35,6 +35,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  // --- Rate Limiting Key Generators ---
+
   private loginFailureKey(phone: string): string {
     return `auth.login.failures:${phone}`;
   }
@@ -43,16 +45,18 @@ export class AuthService {
     return `auth:login:throttle:${phone}`;
   }
 
+  // Safely fetch from Redis with a fallback if the connection drops
   private async getSecurityRedisValue<T>(key: string): Promise<T | null> {
     try {
       return await this.redisService.getStrict<T>(key);
     } catch {
       throw new ServiceUnavailableException(
-        'Authentication serivce temporarily unavailable.',
+        'Authentication service temporarily unavailable.',
       );
     }
   }
 
+  // Check if a user is currently locked out from logging in
   private async assertLoginNotThrottled(phone: string): Promise<void> {
     const throttle = await this.getSecurityRedisValue<boolean>(
       this.loginThrottleKey(phone),
@@ -65,18 +69,18 @@ export class AuthService {
     }
   }
 
+  // Log a failed login attempt and lock the account if they hit the max limit
   private async recordLoginFailure(phone: string): Promise<void> {
     const maxFailures =
       this.configService.getOrThrow<number>('LOGIN_MAX_FAILURES');
-
     const failureWindow = this.configService.getOrThrow<number>(
       'LOGIN_FAILURE_WINDOW_SECONDS',
     );
-
     const throttleSeconds = this.configService.getOrThrow<number>(
       'LOGIN_THROTTLE_SECONDS',
     );
 
+    // Bump the failure count
     const failureCount = await this.redisService.incrementWithTtl(
       this.loginFailureKey(phone),
       failureWindow,
@@ -88,6 +92,7 @@ export class AuthService {
       );
     }
 
+    // If they've exceeded the limit, set the throttle lock
     if (failureCount >= maxFailures) {
       const throttleStored = await this.redisService.set(
         this.loginThrottleKey(phone),
@@ -107,6 +112,7 @@ export class AuthService {
     }
   }
 
+  // Clear both the failure count and the throttle lock upon a successful login
   private async clearLoginFailureState(phone: string): Promise<void> {
     await Promise.all([
       this.redisService.del(this.loginFailureKey(phone)),
@@ -114,7 +120,9 @@ export class AuthService {
     ]);
   }
 
-  // Get payload for JWT token
+  // --- Auth Core Logic ---
+
+  // Constructs the base payload we embed in refresh tokens
   private getPayload(user: User, deviceId: string): RefreshTokenPayload {
     const payload: RefreshTokenPayload = {
       sub: user.id,
@@ -125,50 +133,53 @@ export class AuthService {
     return payload;
   }
 
-  // Register new user
+  // Completes the sign-up process for a new user
   async register(
     authCredentialDto: AuthCredentialsDto,
   ): Promise<TokensResponse> {
     const { pin, deviceId } = authCredentialDto;
     const phone = PhoneNumber.from(authCredentialDto.phone).value;
 
-    // Check if user has clearance to register
+    // 1. Ensure they passed the OTP step first by checking for the clearance key
     const clearanceKey = `register_clearance:${phone}`;
     const hasClearance = await this.redisService.get(clearanceKey);
+
     if (!hasClearance) {
       throw new UnauthorizedException(
         'Session expired. Please request for a new otp',
       );
     }
 
-    // Check if user is already registered
+    // 2. Double-check the phone number isn't already taken
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
     });
+
     if (existingUser) {
       throw new ConflictException('Phone number is already registered.');
     }
 
-    // Hash the PIN
+    // 3. Hash their PIN for secure storage
     const hashPin = await this.passwordService.hash(pin);
 
     try {
+      // 4. Wrap everything in a database transaction so we don't end up with partial accounts
       const tokens = await this.prisma.$transaction(async (tx) => {
-        // Create new user
+        // Create the core user record
         const newUser = await tx.user.create({ data: { phone, pin: hashPin } });
 
-        // Generate tokens
+        // Generate their initial JWT session tokens
         const { accessToken, refreshToken } = await this.getTokens(
           this.getPayload(newUser, deviceId),
         );
 
-        // Hash the refresh token
+        // We only store the hash of the refresh token to prevent token theft from the DB
         const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
-        // Create wallet for new user
+        // Provision their initial wallet
         await this.walletsService.createPersonalWallet(tx, newUser.id);
 
-        // Register this device as Trust Device
+        // Register the device they signed up on as a trusted device
         await tx.trustDevice.create({
           data: {
             userId: newUser.id,
@@ -181,7 +192,7 @@ export class AuthService {
         return { accessToken, refreshToken };
       });
 
-      // Delete the clearance key
+      // 5. Cleanup the OTP clearance key since they've fully registered
       await this.redisService.del(clearanceKey);
 
       return tokens;
@@ -193,17 +204,19 @@ export class AuthService {
     }
   }
 
-  // Login user
+  // Authenticates an existing user and issues new session tokens
   async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
+    // Keep login error messages generic so we don't leak whether an account exists
     const INVALID_LOGIN_MESSAGE =
       'Unable to sign in with provided credentials.';
 
     const { deviceId, pin } = authCredentialDto;
     const phone = PhoneNumber.from(authCredentialDto.phone).value;
 
+    // 1. Block brute force attempts right away
     await this.assertLoginNotThrottled(phone);
 
-    // Check if user is registered
+    // 2. Look up the user and their trusted devices
     const user = await this.prisma.user.findUnique({
       where: { phone },
       include: { trustDevices: true },
@@ -214,35 +227,33 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
     }
 
-    // Verify PIN
+    // 3. Verify the PIN matches the stored hash
     const isPinValid = await this.passwordService.verify(pin, user.pin);
     if (!isPinValid) {
       await this.recordLoginFailure(phone);
       throw new UnauthorizedException('Invalid pin number');
     }
 
+    // 4. Reset failure counters on a successful PIN match
     await this.clearLoginFailureState(phone);
 
-    // Check if user is active
+    // 5. Check if the account is suspended or banned
     if (user.status !== AccountStatus.ACTIVE) {
-      // throw new UnauthorizedException(
-      //   `Account is currently ${user.status}. Please contact support`,
-      // );
+      // Intentionally masking account status behind a generic error message for security
       throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
     }
 
-    // Check if device is trusted
+    // 6. Ensure they are logging in from a recognized device
     const isDeviceTrusted = user.trustDevices.some(
       (device) => device.deviceId === deviceId,
     );
+
     if (!isDeviceTrusted) {
       throw new ForbiddenException('UNRECOGNIZED_DEVICE');
     }
 
-    // Generate tokens
+    // 7. Issue new tokens and persist the refresh token hash
     const tokens = await this.getTokens(this.getPayload(user, deviceId));
-
-    // Update refresh token
     await this.updateRefreshToken(deviceId, tokens.refreshToken);
 
     return {
@@ -251,7 +262,7 @@ export class AuthService {
     };
   }
 
-  // Update refresh token
+  // Safely updates the stored refresh token hash for a specific device
   private async updateRefreshToken(
     deviceId: string,
     refreshToken: string,
@@ -259,7 +270,6 @@ export class AuthService {
     try {
       const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
-      // Update refresh token
       await this.prisma.trustDevice.update({
         where: { deviceId },
         data: { refreshTokenHash },
@@ -270,10 +280,10 @@ export class AuthService {
         error instanceof Error ? error.stack : error,
       );
 
-      // Check if device is not found
+      // P2025 is Prisma's "Record to update not found" error code
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        const primsmaRecordToUpdateNotFoundCode = 'P2025';
-        if (error.code === primsmaRecordToUpdateNotFoundCode) {
+        const prismaRecordToUpdateNotFoundCode = 'P2025';
+        if (error.code === prismaRecordToUpdateNotFoundCode) {
           throw new UnauthorizedException(
             'This device is not found in trust device',
           );
@@ -281,18 +291,17 @@ export class AuthService {
       }
 
       throw new InternalServerErrorException(
-        'An error ocured while refreshing session',
+        'An error occured while refreshing session',
       );
     }
   }
 
-  // Refresh tokens
+  // Reissues new tokens when the access token expires, provided a valid refresh token
   async refreshTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
     try {
-      // Generate tokens
       const tokens = await this.getTokens(payload);
 
-      // Update refresh token
+      // Rotate the refresh token in the database
       await this.updateRefreshToken(payload.deviceId, tokens.refreshToken);
 
       return {
@@ -308,13 +317,13 @@ export class AuthService {
     }
   }
 
-  // Generate tokens
+  // Generates both short-lived access tokens and longer-lived refresh tokens
   private async getTokens(
     payload: RefreshTokenPayload,
   ): Promise<TokensResponse> {
-    // Generate Access and Refresh token
+    // Generate both tokens concurrently for speed
     const [accessToken, refreshToken] = await Promise.all([
-      // Generate Access token
+      // Access token: minimal payload (sub, role) to keep headers small
       this.jwtService.signAsync(
         { sub: payload.sub, role: payload.role },
         {
@@ -324,7 +333,7 @@ export class AuthService {
           ),
         },
       ),
-      // Generate Refresh token
+      // Refresh token: includes phone and deviceId so we know exactly which session to refresh
       this.jwtService.signAsync(
         {
           sub: payload.sub,
@@ -340,6 +349,7 @@ export class AuthService {
         },
       ),
     ]);
+
     return {
       accessToken,
       refreshToken,

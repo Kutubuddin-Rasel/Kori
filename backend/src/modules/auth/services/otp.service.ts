@@ -23,13 +23,12 @@ import { TooManyRequestsException } from '../exceptions/too-many-requests.except
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
 
+  // Configuration variables for OTP lifecycle and rate limiting
   private readonly OTP_TTL: number;
   private readonly CLEARANCE_TTL: number;
-
   private readonly OTP_RESEND_COOLDOWN_SECONDS: number;
   private readonly OTP_MAX_FAILURES: number;
   private readonly OTP_FAILURE_WINDOW_SECONDS: number;
-
   private readonly isDevelopment: boolean;
 
   constructor(
@@ -42,10 +41,8 @@ export class OtpService {
     this.OTP_RESEND_COOLDOWN_SECONDS = this.configService.getOrThrow<number>(
       'OTP_RESEND_COOLDOWN_SECONDS',
     );
-
     this.OTP_MAX_FAILURES =
       this.configService.getOrThrow<number>('OTP_MAX_FAILURES');
-
     this.OTP_FAILURE_WINDOW_SECONDS = this.configService.getOrThrow<number>(
       'OTP_FAILURE_WINDOW_SECONDS',
     );
@@ -53,9 +50,11 @@ export class OtpService {
       this.configService.getOrThrow<string>('NODE_ENV') === 'development';
   }
 
+  // Redis key generators for tracking different OTP states
   private registerClearanceKey(phone: string): string {
     return `register_clearance:${phone}`;
   }
+
   private otpChallengeKey(chanllengeId: string): string {
     return `auth:otp:challenge:${chanllengeId}`;
   }
@@ -72,6 +71,7 @@ export class OtpService {
     return `auth:otp:failures:${phone}`;
   }
 
+  // Helper to fetch values from Redis with a fallback for connection errors
   private async getSecurityValue<T>(key: string): Promise<T | null> {
     try {
       return await this.redisService.getStrict(key);
@@ -82,16 +82,12 @@ export class OtpService {
     }
   }
 
-  /**
-   *
-   * @param sendOtpDto
-   * @returns
-   */
-  // In production, integrate with an SMS gateway to send the OTP to the user's phone.
+  // Generates and sends a new OTP while enforcing rate limits and cooldowns
   async sendOtp(sendOtpDto: SendOtpDto): Promise<SendOtpResponse> {
     const phone = PhoneNumber.from(sendOtpDto.phone).value;
     const { deviceId } = sendOtpDto;
 
+    // Check if the user is currently locked out due to too many failed attempts
     const failureKey = this.otpFailureKey(phone);
     const failureCount = (await this.getSecurityValue<number>(failureKey)) ?? 0;
 
@@ -101,6 +97,7 @@ export class OtpService {
       );
     }
 
+    // Try to set a cooldown lock. 'nx: true' ensures it only succeeds if the key doesn't exist.
     const resendKey = this.otpResendKey(phone);
     const resendLockAcquired = await this.redisService.set(resendKey, true, {
       ttl: this.OTP_RESEND_COOLDOWN_SECONDS,
@@ -108,6 +105,7 @@ export class OtpService {
     });
 
     if (!resendLockAcquired) {
+      // The lock failed. Verify if it's because they are actually on cooldown.
       const existingResendLocker =
         await this.getSecurityValue<boolean>(resendKey);
 
@@ -117,22 +115,25 @@ export class OtpService {
         );
       }
 
+      // If they aren't on cooldown but the lock failed, Redis is likely unavailable.
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable.',
       );
     }
 
+    // Generate a unique challenge ID and a 6-digit OTP code
     const challengeId = randomUUID();
     const otp = randomInt(0, 1000000).toString().padStart(6, '0');
     const challenge: OtpChallenge = {
       phone,
       deviceId,
-      code: challengeId,
+      code: otp,
     };
 
     const challengeKey = this.otpChallengeKey(challengeId);
     const activeChallengeKey = this.otpActiveChallengeKey(phone);
 
+    // Save the challenge details (phone, device, OTP code)
     const challengeStored = await this.redisService.set(
       challengeKey,
       challenge,
@@ -142,6 +143,7 @@ export class OtpService {
     );
 
     if (!challengeStored) {
+      // Rollback cooldown lock if we fail to store the challenge
       await this.redisService.del(resendKey);
 
       throw new ServiceUnavailableException(
@@ -149,6 +151,8 @@ export class OtpService {
       );
     }
 
+    // Track the most recent active challenge for this phone number
+    // This invalidates any older OTPs that might still be unexpired
     const activeChallengeStored = await this.redisService.set(
       activeChallengeKey,
       challengeId,
@@ -156,6 +160,7 @@ export class OtpService {
     );
 
     if (!activeChallengeStored) {
+      // Rollback everything if we fail here
       await Promise.all([
         this.redisService.del(challengeKey),
         this.redisService.del(resendKey),
@@ -166,12 +171,15 @@ export class OtpService {
       );
     }
 
+    // In dev mode, log the OTP so we don't have to actually send an SMS
     if (this.isDevelopment) {
       const maskedPhone = phone.slice(-4);
       this.logger.debug(
         `[DEVELOPMENT ONLY] OTP for phone ending ${maskedPhone} is: ${otp}`,
       );
     }
+
+    // TODO: In production, integrate with an SMS gateway here to send the OTP.
     return {
       message: 'OTP sent successfully. It will expire in 3 minutes.',
       expiresIn: this.OTP_TTL,
@@ -179,11 +187,13 @@ export class OtpService {
     };
   }
 
-  // Verifies the OTP provided by the user
+  // Validates a user-provided OTP against the active challenge
   async verifyOtp(VerifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
     const { otp, deviceId, challengeId } = VerifyOtpDto;
 
     const phone = PhoneNumber.from(VerifyOtpDto.phone).value;
+
+    // 1. Check for brute force lockouts first
     const failureKey = this.otpFailureKey(phone);
     const failureCount = (await this.getSecurityValue<number>(failureKey)) ?? 0;
 
@@ -193,14 +203,16 @@ export class OtpService {
       );
     }
 
+    // 2. Make sure they are verifying the most recently requested OTP
     const activeChallengeKey = this.otpActiveChallengeKey(phone);
     const activeChallengeId =
       await this.getSecurityValue<string>(activeChallengeKey);
 
     if (!activeChallengeId || activeChallengeId !== challengeId) {
-      throw new BadRequestException('Otp challenge is expired or surperseded');
+      throw new BadRequestException('Otp challenge is expired or superseded');
     }
 
+    // 3. Fetch the actual challenge details
     const challenge = await this.getSecurityValue<OtpChallenge>(
       this.otpChallengeKey(challengeId),
     );
@@ -209,11 +221,14 @@ export class OtpService {
       throw new BadRequestException('OTP challenge is expired or unavailable.');
     }
 
+    // 4. Verify the challenge belongs to the requester
     if (challenge.phone !== phone || challenge.deviceId !== deviceId) {
       throw new BadRequestException('Invalid OTP challenge');
     }
 
+    // 5. Verify the actual OTP code
     if (challenge.code !== otp) {
+      // Record the failed attempt
       const updateFailureCount = await this.redisService.incrementWithTtl(
         failureKey,
         this.OTP_FAILURE_WINDOW_SECONDS,
@@ -225,6 +240,7 @@ export class OtpService {
         );
       }
 
+      // Lock them out immediately if they hit the limit
       if (updateFailureCount >= this.OTP_MAX_FAILURES) {
         throw new TooManyRequestsException(
           'Too many invalid OTP attempts. Try again later.',
@@ -234,6 +250,7 @@ export class OtpService {
       throw new BadRequestException('Invalid OTP');
     }
 
+    // 6. OTP is correct - cleanup the challenge to prevent replay attacks
     const challengeDeleted = await this.redisService.del(
       this.otpChallengeKey(challengeId),
     );
@@ -242,13 +259,16 @@ export class OtpService {
       throw new BadRequestException('OTP challenge is no longer valid.');
     }
 
+    // Reset failure count since they successfully authenticated
     await this.redisService.del(failureKey);
 
+    // 7. Handle post-verification logic (login vs registration)
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
     });
 
     if (existingUser) {
+      // Returning user: authorize this device for them
       await this.prisma.trustDevice.upsert({
         where: { deviceId },
         update: { createdAt: new Date(), isAuthorized: true },
@@ -261,8 +281,8 @@ export class OtpService {
       };
     }
 
-    // If user doesn't exist, set a clearance key in Redis to allow them to proceed to PIN setup
-    // Without creating an account first. This key will have a TTL to prevent misuse.
+    // New user: grant them a temporary clearance to proceed with registration (e.g. PIN setup)
+    // This allows the next step without requiring a full account yet.
     const clearanceKey = this.registerClearanceKey(phone);
     const result = await this.redisService.set(clearanceKey, 'GRANTED', {
       ttl: this.CLEARANCE_TTL,
