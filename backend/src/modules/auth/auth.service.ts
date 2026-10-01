@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,6 +20,7 @@ import { AccountStatus, User } from '../../../generated/prisma/client';
 import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
+import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
 
 @Injectable()
 export class AuthService {
@@ -32,6 +34,85 @@ export class AuthService {
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
   ) {}
+
+  private loginFailureKey(phone: string): string {
+    return `auth.login.failures:${phone}`;
+  }
+
+  private loginThrottleKey(phone: string): string {
+    return `auth:login:throttle:${phone}`;
+  }
+
+  private async getSecurityRedisValue<T>(key: string): Promise<T | null> {
+    try {
+      return await this.redisService.getStrict<T>(key);
+    } catch {
+      throw new ServiceUnavailableException(
+        'Authentication serivce temporarily unavailable.',
+      );
+    }
+  }
+
+  private async assertLoginNotThrottled(phone: string): Promise<void> {
+    const throttle = await this.getSecurityRedisValue<boolean>(
+      this.loginThrottleKey(phone),
+    );
+
+    if (throttle) {
+      throw new TooManyRequestsException(
+        'Too many login attempts. Try again later.',
+      );
+    }
+  }
+
+  private async recordLoginFailure(phone: string): Promise<void> {
+    const maxFailures =
+      this.configService.getOrThrow<number>('LOGIN_MAX_FAILURES');
+
+    const failureWindow = this.configService.getOrThrow<number>(
+      'LOGIN_FAILURE_WINDOW_SECONDS',
+    );
+
+    const throttleSeconds = this.configService.getOrThrow<number>(
+      'LOGIN_THROTTLE_SECONDS',
+    );
+
+    const failureCount = await this.redisService.incrementWithTtl(
+      this.loginFailureKey(phone),
+      failureWindow,
+    );
+
+    if (failureCount === null) {
+      throw new ServiceUnavailableException(
+        'Authentication service temporarily unavailable.',
+      );
+    }
+
+    if (failureCount >= maxFailures) {
+      const throttleStored = await this.redisService.set(
+        this.loginThrottleKey(phone),
+        true,
+        { ttl: throttleSeconds },
+      );
+
+      if (!throttleStored) {
+        throw new ServiceUnavailableException(
+          'Authentication service temporarily unavailable.',
+        );
+      }
+
+      throw new TooManyRequestsException(
+        'Too many login attempts. Try again later.',
+      );
+    }
+  }
+
+  private async clearLoginFailureState(phone: string): Promise<void> {
+    await Promise.all([
+      this.redisService.del(this.loginFailureKey(phone)),
+      this.redisService.del(this.loginThrottleKey(phone)),
+    ]);
+  }
 
   // Get payload for JWT token
   private getPayload(user: User, deviceId: string): RefreshTokenPayload {
@@ -114,29 +195,40 @@ export class AuthService {
 
   // Login user
   async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
+    const INVALID_LOGIN_MESSAGE =
+      'Unable to sign in with provided credentials.';
+
     const { deviceId, pin } = authCredentialDto;
     const phone = PhoneNumber.from(authCredentialDto.phone).value;
+
+    await this.assertLoginNotThrottled(phone);
 
     // Check if user is registered
     const user = await this.prisma.user.findUnique({
       where: { phone },
       include: { trustDevices: true },
     });
+
     if (!user) {
-      throw new UnauthorizedException('Invalid phone number');
+      await this.recordLoginFailure(phone);
+      throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
     }
 
     // Verify PIN
     const isPinValid = await this.passwordService.verify(pin, user.pin);
     if (!isPinValid) {
+      await this.recordLoginFailure(phone);
       throw new UnauthorizedException('Invalid pin number');
     }
 
+    await this.clearLoginFailureState(phone);
+
     // Check if user is active
     if (user.status !== AccountStatus.ACTIVE) {
-      throw new UnauthorizedException(
-        `Account is currently ${user.status}. Please contact support`,
-      );
+      // throw new UnauthorizedException(
+      //   `Account is currently ${user.status}. Please contact support`,
+      // );
+      throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
     }
 
     // Check if device is trusted
