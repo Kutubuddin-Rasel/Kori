@@ -7,6 +7,7 @@ import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -21,7 +22,10 @@ describe('AuthService', () => {
 
   let redisServiceStub: {
     get: jest.Mock;
+    getStrict: jest.Mock;
+    set: jest.Mock;
     del: jest.Mock;
+    incrementWithTtl: jest.Mock;
   };
 
   let prismaServiceStub: {
@@ -49,12 +53,22 @@ describe('AuthService', () => {
     };
 
     configServiceStub = {
-      getOrThrow: jest.fn(),
+      getOrThrow: jest.fn((key: string) => {
+        const config: Record<string, number> = {
+          LOGIN_MAX_FAILURES: 5,
+          LOGIN_FAILURE_WINDOW_SECONDS: 900,
+          LOGIN_THROTTLE_SECONDS: 60,
+        };
+        return config[key];
+      }),
     };
 
     redisServiceStub = {
       get: jest.fn().mockResolvedValue(null),
-      del: jest.fn(),
+      getStrict: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      del: jest.fn().mockResolvedValue(true),
+      incrementWithTtl: jest.fn().mockResolvedValue(1),
     };
 
     prismaServiceStub = {
@@ -242,6 +256,68 @@ describe('AuthService', () => {
 
     expect(redisServiceStub.del).toHaveBeenCalledWith(
       `register_clearance:${credentials.phone}`,
+    );
+  });
+
+  it('throttles login before querying the user when a throttle exists', async () => {
+    redisServiceStub.getStrict.mockResolvedValueOnce(true);
+
+    await expect(
+      service.login({
+        phone: '+8801712345678',
+        pin: '1234',
+        deviceId: 'device-1',
+      }),
+    ).rejects.toBeInstanceOf(TooManyRequestsException);
+
+    expect(prismaServiceStub.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('records a failed login when PIN verification fails', async () => {
+    redisServiceStub.getStrict.mockResolvedValueOnce(null);
+
+    prismaServiceStub.user.findUnique.mockResolvedValueOnce({
+      id: 'user-1',
+      phone: '+8801712345678',
+      pin: 'hash-pin',
+      status: 'ACTIVE',
+      role: 'CUSTOMER',
+      trustDevices: [],
+    });
+
+    passwordServiceStub.verify.mockResolvedValueOnce(false);
+    redisServiceStub.incrementWithTtl.mockResolvedValueOnce(1);
+
+    await expect(
+      service.login({
+        phone: '+8801712345678',
+        pin: '1111',
+        deviceId: 'device-1',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(redisServiceStub.incrementWithTtl).toHaveBeenCalled();
+  });
+
+  it('starts login throttling when the failure threshold is reached', async () => {
+    redisServiceStub.getStrict.mockResolvedValueOnce(null);
+    prismaServiceStub.user.findUnique.mockResolvedValueOnce(null);
+    redisServiceStub.incrementWithTtl.mockResolvedValueOnce(5);
+
+    await expect(
+      service.login({
+        phone: '+8801712345678',
+        pin: '1111',
+        deviceId: 'device-1',
+      }),
+    ).rejects.toBeInstanceOf(TooManyRequestsException);
+
+    expect(redisServiceStub.set).toHaveBeenCalledWith(
+      'auth:login:throttle:+8801712345678',
+      true,
+      {
+        ttl: 60,
+      },
     );
   });
 });
