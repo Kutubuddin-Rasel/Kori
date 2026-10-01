@@ -104,6 +104,75 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async getStrict<T>(key: string): Promise<T | null> {
+    if (!this.isConnected) {
+      this.logger.warn('Redis is not connected');
+      return null;
+    }
+
+    try {
+      const data = await this.redis.get(key);
+      if (data === null) {
+        return null;
+      }
+
+      return JSON.parse(data) as T;
+    } catch (error) {
+      this.logger.error(
+        `Error getting Redis key:${key}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw error;
+    }
+  }
+
+  async incrementWithTtl(
+    key: string,
+    ttlSeconds: number,
+  ): Promise<number | null> {
+    if (!this.isConnected) {
+      this.logger.warn('Redis is not connected');
+      return null;
+    }
+
+    try {
+      const result = await this.redis
+        .multi()
+        .incr(key)
+        .expire(key, ttlSeconds)
+        .exec();
+
+      if (!result || result.length !== 2) {
+        return null;
+      }
+
+      const [incrementResult, expireResult] = result;
+      const [incrementError, count] = incrementResult;
+      const [expireError, expirationApplied] = expireResult;
+
+      if (incrementError) {
+        throw incrementError;
+      }
+
+      if (expireError) {
+        throw expireError;
+      }
+
+      if (typeof count !== 'number' || expirationApplied !== 1) {
+        return null;
+      }
+
+      return count;
+    } catch (error) {
+      this.logger.error(
+        `Error incrementing Redis key:${key}`,
+        error instanceof Error ? error.stack : error,
+      );
+
+      return null;
+    }
+  }
+
   /**
    * Sets a value in Redis cache with the specified key and options. It checks if the Redis connection is active before attempting to set the value.
    * If the connection is not active, it logs a warning and returns false. The method accepts options for time-to-live (ttl) and NX (only set if key does not exist).
