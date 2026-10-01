@@ -53,6 +53,35 @@ export class OtpService {
       this.configService.getOrThrow<string>('NODE_ENV') === 'development';
   }
 
+  private registerClearanceKey(phone: string): string {
+    return `register_clearance:${phone}`;
+  }
+  private otpChallengeKey(chanllengeId: string): string {
+    return `auth:otp:challenge:${chanllengeId}`;
+  }
+
+  private otpActiveChallengeKey(phone: string): string {
+    return `auth:otp:active:${phone}`;
+  }
+
+  private otpResendKey(phone: string): string {
+    return `auth:otp:resend:${phone}`;
+  }
+
+  private otpFailureKey(phone: string): string {
+    return `auth:otp:failures:${phone}`;
+  }
+
+  private async getSecurityValue<T>(key: string): Promise<T | null> {
+    try {
+      return await this.redisService.getStrict(key);
+    } catch {
+      throw new ServiceUnavailableException(
+        'Authentication service temporary unavailable',
+      );
+    }
+  }
+
   /**
    *
    * @param sendOtpDto
@@ -127,8 +156,10 @@ export class OtpService {
     );
 
     if (!activeChallengeStored) {
-      await this.redisService.del(challengeKey);
-      await this.redisService.del(resendKey);
+      await Promise.all([
+        this.redisService.del(challengeKey),
+        this.redisService.del(resendKey),
+      ]);
 
       throw new ServiceUnavailableException(
         'Authentication service temporarily unavailable.',
@@ -247,34 +278,5 @@ export class OtpService {
       message: 'Otp verified. Procced to PIN setup',
       isRegistered: false,
     };
-  }
-
-  private registerClearanceKey(phone: string): string {
-    return `register_clearance:${phone}`;
-  }
-  private otpChallengeKey(chanllengeId: string): string {
-    return `auth:otp:challenge:${chanllengeId}`;
-  }
-
-  private otpActiveChallengeKey(phone: string): string {
-    return `auth:otp:active:${phone}`;
-  }
-
-  private otpResendKey(phone: string): string {
-    return `auth:otp:resend:${phone}`;
-  }
-
-  private otpFailureKey(phone: string): string {
-    return `auth:otp:failures:${phone}`;
-  }
-
-  private async getSecurityValue<T>(key: string): Promise<T | null> {
-    try {
-      return await this.redisService.getStrict(key);
-    } catch {
-      throw new ServiceUnavailableException(
-        'Authentication service temporary unavailable',
-      );
-    }
   }
 }

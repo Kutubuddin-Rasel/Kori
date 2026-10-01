@@ -6,7 +6,12 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs'],
+    // Ignore build folders, config files, and dependency artifacts
+    ignores: [
+      'eslint.config.mjs',
+      'dist/**',
+      'node_modules/**',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -17,7 +22,8 @@ export default tseslint.config(
         ...globals.node,
         ...globals.jest,
       },
-      sourceType: 'commonjs',
+      // NestJS source files use import/export syntax
+      sourceType: 'module',
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
@@ -26,10 +32,18 @@ export default tseslint.config(
   },
   {
     rules: {
+      // Custom overrides for flexibility in a NestJS environment
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      
+      // NestJS relies heavily on Dependency Injection via class constructors
+      '@typescript-eslint/no-unsafe-assignment': 'warn',
+      '@typescript-eslint/no-unsafe-member-access': 'warn',
+      '@typescript-eslint/no-unsafe-call': 'warn',
+
+      // Keep Prettier rules strict but relaxed on line endings for cross-platform dev
+      "prettier/prettier": ["error", { "endOfLine": "auto" }],
     },
   },
 );
