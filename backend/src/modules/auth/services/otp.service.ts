@@ -66,7 +66,7 @@ export class OtpService {
     const failureKey = this.otpFailureKey(phone);
     const failureCount = (await this.getSecurityValue<number>(failureKey)) ?? 0;
 
-    if (failureCount > this.OTP_MAX_FAILURES) {
+    if (failureCount >= this.OTP_MAX_FAILURES) {
       throw new TooManyRequestsException(
         'Too many invalid OTP attempts. Try again later.',
       );
