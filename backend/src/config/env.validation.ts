@@ -1,9 +1,11 @@
-import { plainToInstance, Transform } from 'class-transformer';
+import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsString,
+  Min,
   validateSync,
 } from 'class-validator';
 
@@ -68,14 +70,36 @@ class EnvironmentVariables {
   CLEARANCE_TTL: number = 300;
 
   @IsNotEmpty()
-  @Transform(({ value }) => Number(value))
   @IsNumber()
   IDEMPOTENCY_TTL_SECONDS: number = 86400;
 
   @IsNotEmpty()
-  @Transform(({ value }) => Number(value))
   @IsNumber()
   PROCESSING_TTL_SECONDS: number = 30;
+
+  @IsInt()
+  @Min(1)
+  OTP_RESEND_COOLDOWN_SECONDS: number = 60;
+
+  @IsInt()
+  @Min(1)
+  OTP_MAX_FAILURES: number = 10;
+
+  @IsInt()
+  @Min(1)
+  OTP_FAILURE_WINDOW_SECONDS: number = 600;
+
+  @IsInt()
+  @Min(1)
+  LOGIN_MAX_FAILURES: number = 5;
+
+  @IsInt()
+  @Min(1)
+  LOGIN_FAILURE_WINDOW_SECONDS: number = 900;
+
+  @IsInt()
+  @Min(1)
+  LOGIN_THROTTLE_SECONDS: number = 60;
 }
 
 /**
