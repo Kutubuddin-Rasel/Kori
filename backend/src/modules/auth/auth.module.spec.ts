@@ -33,6 +33,12 @@ describe('AuthModule compositon', () => {
 
               OTP_TIME_LIMIT: 180,
               CLEARANCE_TTL: 300,
+              OTP_RESEND_COOLDOWN_SECONDS: 60,
+              OTP_MAX_FAILURES: 10,
+              OTP_FAILURE_WINDOW_SECONDS: 600,
+              LOGIN_MAX_FAILURES: 5,
+              LOGIN_FAILURE_WINDOW_SECONDS: 900,
+              LOGIN_THROTTLE_SECONDS: 60,
             }),
           ],
         }),

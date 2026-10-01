@@ -9,11 +9,8 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SendOtpDto } from './dto/send-otp.dto';
-import {
-  SendOtpResponse,
-  TokenResponse,
-  VerifyOtpResponse,
-} from './interfaces/auth.interface';
+import { TokenResponse } from './interfaces/auth.interface';
+import { SendOtpResponse, VerifyOtpResponse } from './interfaces/otp.interface';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { CookieService } from './services/cookie.service';
