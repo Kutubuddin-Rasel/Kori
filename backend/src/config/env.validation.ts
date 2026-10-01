@@ -1,4 +1,4 @@
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, Transform } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
@@ -62,42 +62,52 @@ class EnvironmentVariables {
   REFRESH_TOKEN_EXPIRY: string = '';
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   OTP_TIME_LIMIT: number = 180;
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   CLEARANCE_TTL: number = 300;
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   IDEMPOTENCY_TTL_SECONDS: number = 86400;
 
   @IsNotEmpty()
+  @Transform(({ value }) => Number(value))
   @IsNumber()
   PROCESSING_TTL_SECONDS: number = 30;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   OTP_RESEND_COOLDOWN_SECONDS: number = 60;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   OTP_MAX_FAILURES: number = 10;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   OTP_FAILURE_WINDOW_SECONDS: number = 600;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   LOGIN_MAX_FAILURES: number = 5;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   LOGIN_FAILURE_WINDOW_SECONDS: number = 900;
 
   @IsInt()
+  @Transform(({ value }) => Number(value))
   @Min(1)
   LOGIN_THROTTLE_SECONDS: number = 60;
 }
