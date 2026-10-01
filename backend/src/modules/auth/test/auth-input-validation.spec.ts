@@ -30,7 +30,8 @@ describe('Auth input validation', () => {
   it('rejects a non-numeric OTP when its length is valid', async () => {
     const dto = Object.assign(new VerifyOtpDto(), {
       phone: '+8801712345678',
-      otp: '12ab',
+      challengeId: '00000000-0000-4000-8000-000000000001',
+      otp: '12ab56',
       deviceId: 'device-1',
     });
 
@@ -42,7 +43,8 @@ describe('Auth input validation', () => {
   it('accepts an OTP leading with zero', async () => {
     const dto = Object.assign(new VerifyOtpDto(), {
       phone: '+8801712345678',
-      otp: '0123',
+      challengeId: '00000000-0000-4000-8000-000000000001',
+      otp: '001234',
       deviceId: 'device-1',
     });
 
