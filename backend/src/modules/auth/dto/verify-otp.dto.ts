@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsPhoneNumber, IsString, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsPhoneNumber,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 
 export class VerifyOtpDto {
   @IsNotEmpty()
@@ -7,12 +13,16 @@ export class VerifyOtpDto {
 
   @IsNotEmpty()
   @IsString()
-  @Matches(/^[0-9]{4}$/, {
-    message: 'Otp must be exactly 4 digits',
+  @Matches(/^[0-9]{6}$/, {
+    message: 'Otp must be exactly 6 digits',
   })
   otp: string = '';
 
   @IsNotEmpty()
   @IsString()
   deviceId: string = '';
+
+  @IsNotEmpty()
+  @IsUUID('4')
+  challengeId: string = '';
 }
