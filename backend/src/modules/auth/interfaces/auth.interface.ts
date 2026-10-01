@@ -1,15 +1,6 @@
 /// This file contains the interfaces for the authentication module.
 
 // It defines the structure of the data that is sent and received during the authentication process.
-export interface SendOtpResponse {
-  readonly message: string;
-  readonly expiresIn?: number;
-}
-
-export interface VerifyOtpResponse {
-  readonly message: string;
-  readonly isRegistered: boolean;
-}
 
 export interface TokensResponse {
   readonly accessToken: string;
