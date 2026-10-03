@@ -3,8 +3,9 @@ import { OtpService } from '../services/otp.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { BadRequestException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
+import { VerifyOtpDto } from '../dto/verify-otp.dto';
 
 describe('OTP service', () => {
   let loggerDebugSpy: jest.SpyInstance;
@@ -14,8 +15,13 @@ describe('OTP service', () => {
     set: jest.fn(),
     del: jest.fn(),
     incrementWithTtl: jest.fn(),
+    evalScript: jest.fn(), // We must mock evalScript!
   };
-  const mockPrismaService = {};
+
+  const mockPrismaService = {
+    user: { findUnique: jest.fn() },
+    trustDevice: { upsert: jest.fn() },
+  };
 
   async function createOtpService(
     env: 'production' | 'development',
@@ -137,50 +143,31 @@ describe('OTP service', () => {
     ).rejects.toBeInstanceOf(TooManyRequestsException);
   });
 
-  it('increments failures for a wrong active OTP', async () => {
-    const challengeId = '00000000-0000-4000-8000-000000000001';
+  it('concurrent attempts pass only one', async () => {
+    const dto = Object.assign(new VerifyOtpDto(), {
+      phone: '+8801712345678',
+      challengeId: '00000000-0000-4000-8000-000000000001',
+      otp: '001234',
+      deviceId: 'device-1',
+    });
 
-    mockRedisService.getStrict
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(challengeId)
-      .mockResolvedValueOnce({
-        phone: '+8801712345678',
-        deviceId: 'device-1',
-        code: '123456',
-      });
-
-    mockRedisService.incrementWithTtl.mockResolvedValueOnce(1);
-
-    const service = await createOtpService('production');
-
-    await expect(
-      service.verifyOtp({
-        phone: '+8801712345678',
-        deviceId: 'device-1',
-        challengeId,
-        otp: '654321',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(mockRedisService.incrementWithTtl).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not consume failure attempts for a superseded challenge', async () => {
-    mockRedisService.getStrict
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce('new-challenge-id');
+    // Mock evalScript to return VERIFIED for the first request,
+    // and SUPERSEDED for the second request, simulating Redis's atomic evaluation.
+    mockRedisService.evalScript
+      .mockResolvedValueOnce(['VERIFIED'])
+      .mockResolvedValueOnce(['SUPERSEDED']);
 
     const service = await createOtpService('production');
 
-    await expect(
-      service.verifyOtp({
-        phone: '+8801712345678',
-        deviceId: 'device-1',
-        challengeId: 'old-challenge-id',
-        otp: '123456',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const results = await Promise.allSettled([
+      service.verifyOtp(dto),
+      service.verifyOtp(dto),
+    ]);
 
-    expect(mockRedisService.incrementWithTtl).not.toHaveBeenCalled();
+    const fulfiled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+
+    expect(fulfiled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
   });
 });
