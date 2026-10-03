@@ -107,7 +107,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async getStrict<T>(key: string): Promise<T | null> {
     if (!this.isConnected) {
       this.logger.warn('Redis is not connected');
-      return null;
+      throw new Error('Redis is not connected');
     }
 
     try {

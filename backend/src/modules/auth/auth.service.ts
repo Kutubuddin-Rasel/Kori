@@ -38,7 +38,7 @@ export class AuthService {
   // --- Rate Limiting Key Generators ---
 
   private loginFailureKey(phone: string): string {
-    return `auth.login.failures:${phone}`;
+    return `auth:login:failures:${phone}`;
   }
 
   private loginThrottleKey(phone: string): string {
