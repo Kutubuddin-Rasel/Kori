@@ -11,6 +11,7 @@ import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { SendOtpDto } from '../dto/send-otp.dto';
 import {
   OtpChallenge,
+  OtpVerificationStatus,
   SendOtpResponse,
   VerifyOtpResponse,
 } from '../interfaces/otp.interface';
@@ -18,6 +19,7 @@ import { VerifyOtpDto } from '../dto/verify-otp.dto';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { randomInt, randomUUID } from 'node:crypto';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
+import { VERIFY_OTP_SCRIPT } from '../scripts/verify-otp.script';
 
 @Injectable()
 export class OtpService {
@@ -55,20 +57,20 @@ export class OtpService {
     return `register_clearance:${phone}`;
   }
 
-  private otpChallengeKey(chanllengeId: string): string {
-    return `auth:otp:challenge:${chanllengeId}`;
+  private otpChallengeKey(phone: string, chanllengeId: string): string {
+    return `auth:otp:{${phone}}:challenge:${chanllengeId}`;
   }
 
   private otpActiveChallengeKey(phone: string): string {
-    return `auth:otp:active:${phone}`;
+    return `auth:otp:{${phone}}:active`;
   }
 
   private otpResendKey(phone: string): string {
-    return `auth:otp:resend:${phone}`;
+    return `auth:otp:{${phone}}:resend`;
   }
 
   private otpFailureKey(phone: string): string {
-    return `auth:otp:failures:${phone}`;
+    return `auth:otp:{${phone}}:failures`;
   }
 
   // Helper to fetch values from Redis with a fallback for connection errors
@@ -130,7 +132,7 @@ export class OtpService {
       code: otp,
     };
 
-    const challengeKey = this.otpChallengeKey(challengeId);
+    const challengeKey = this.otpChallengeKey(phone, challengeId);
     const activeChallengeKey = this.otpActiveChallengeKey(phone);
 
     // Save the challenge details (phone, device, OTP code)
@@ -193,76 +195,34 @@ export class OtpService {
 
     const phone = PhoneNumber.from(VerifyOtpDto.phone).value;
 
-    // 1. Check for brute force lockouts first
-    const failureKey = this.otpFailureKey(phone);
-    const failureCount = (await this.getSecurityValue<number>(failureKey)) ?? 0;
-
-    if (failureCount >= this.OTP_MAX_FAILURES) {
-      throw new TooManyRequestsException(
-        'Too many invalid OTP attempts. Try again later.',
-      );
-    }
-
-    // 2. Make sure they are verifying the most recently requested OTP
-    const activeChallengeKey = this.otpActiveChallengeKey(phone);
-    const activeChallengeId =
-      await this.getSecurityValue<string>(activeChallengeKey);
-
-    if (!activeChallengeId || activeChallengeId !== challengeId) {
-      throw new BadRequestException('Otp challenge is expired or superseded');
-    }
-
-    // 3. Fetch the actual challenge details
-    const challenge = await this.getSecurityValue<OtpChallenge>(
-      this.otpChallengeKey(challengeId),
+    const status = await this.verifyOtpAtomically(
+      phone,
+      deviceId,
+      challengeId,
+      otp,
     );
 
-    if (!challenge) {
-      throw new BadRequestException('OTP challenge is expired or unavailable.');
-    }
-
-    // 4. Verify the challenge belongs to the requester
-    if (challenge.phone !== phone || challenge.deviceId !== deviceId) {
-      throw new BadRequestException('Invalid OTP challenge');
-    }
-
-    // 5. Verify the actual OTP code
-    if (challenge.code !== otp) {
-      // Record the failed attempt
-      const updateFailureCount = await this.redisService.incrementWithTtl(
-        failureKey,
-        this.OTP_FAILURE_WINDOW_SECONDS,
-      );
-
-      if (updateFailureCount === null) {
-        throw new ServiceUnavailableException(
-          'Authentication service temporarily unavailable.',
-        );
-      }
-
-      // Lock them out immediately if they hit the limit
-      if (updateFailureCount >= this.OTP_MAX_FAILURES) {
+    switch (status) {
+      case 'VERIFIED':
+        break;
+      case 'TOO_MANY_ATTEMPTS':
         throw new TooManyRequestsException(
           'Too many invalid OTP attempts. Try again later.',
         );
+      case 'INVALID_OTP':
+        throw new BadRequestException('Invalid OTP');
+      case 'INVALID_CHALLENGE':
+        throw new BadRequestException('Invalid OTP challenge');
+      case 'NO_ACTIVE_CHALLENGE':
+      case 'SUPERSEDED':
+      case 'CHALLENGE_MISSING':
+        throw new BadRequestException('OTP challenge is expired or superseded');
+      default: {
+        throw new InternalServerErrorException('Unexpected OTP state');
       }
-
-      throw new BadRequestException('Invalid OTP');
     }
 
-    // 6. OTP is correct - cleanup the challenge to prevent replay attacks
-    const challengeDeleted = await this.redisService.del(
-      this.otpChallengeKey(challengeId),
-    );
-
-    if (!challengeDeleted) {
-      throw new BadRequestException('OTP challenge is no longer valid.');
-    }
-
-    // Reset failure count since they successfully authenticated
-    await this.redisService.del(failureKey);
-
-    // 7. Handle post-verification logic (login vs registration)
+    // Handle post-verification logic (login vs registration)
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
     });
@@ -298,5 +258,41 @@ export class OtpService {
       message: 'Otp verified. Procced to PIN setup',
       isRegistered: false,
     };
+  }
+
+  private async verifyOtpAtomically(
+    phone: string,
+    deviceId: string,
+    challengeId: string,
+    otp: string,
+  ): Promise<OtpVerificationStatus> {
+    try {
+      const result = await this.redisService.evalScript(
+        VERIFY_OTP_SCRIPT,
+        [
+          this.otpActiveChallengeKey(phone),
+          this.otpChallengeKey(phone, challengeId),
+          this.otpFailureKey(phone),
+        ],
+        [
+          challengeId,
+          phone,
+          deviceId,
+          otp,
+          String(this.OTP_MAX_FAILURES),
+          String(this.OTP_FAILURE_WINDOW_SECONDS),
+        ],
+      );
+
+      if (!Array.isArray(result) || typeof result[0] !== 'string') {
+        throw new Error('Unexpected OTP script result');
+      }
+
+      return result[0] as OtpVerificationStatus;
+    } catch {
+      throw new ServiceUnavailableException(
+        'Authentication service temporarily unavailable.',
+      );
+    }
   }
 }

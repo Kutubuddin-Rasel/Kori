@@ -14,3 +14,12 @@ export interface OtpChallenge {
   readonly deviceId: string;
   readonly code: string;
 }
+
+export type OtpVerificationStatus =
+  | 'VERIFIED'
+  | 'TOO_MANY_ATTEMPTS'
+  | 'NO_ACTIVE_CHALLENGE'
+  | 'SUPERSEDED'
+  | 'CHALLENGE_MISSING'
+  | 'INVALID_CHALLENGE'
+  | 'INVALID_OTP';
