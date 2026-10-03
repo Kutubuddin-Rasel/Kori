@@ -173,6 +173,28 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async evalScript(
+    script: string,
+    keys: string[],
+    args: string[],
+  ): Promise<unknown> {
+    if (!this.isConnected) {
+      this.logger.warn('Redis is not connected');
+      throw new Error('Redis is not connected');
+    }
+
+    try {
+      return await this.redis.eval(script, keys.length, ...keys, ...args);
+    } catch (error) {
+      this.logger.error(
+        'Redis script execution failed',
+        error instanceof Error ? error.stack : error,
+      );
+
+      throw error;
+    }
+  }
+
   /**
    * Sets a value in Redis cache with the specified key and options. It checks if the Redis connection is active before attempting to set the value.
    * If the connection is not active, it logs a warning and returns false. The method accepts options for time-to-live (ttl) and NX (only set if key does not exist).
