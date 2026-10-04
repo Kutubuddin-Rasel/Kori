@@ -206,10 +206,6 @@ export class AuthService {
 
   // Authenticates an existing user and issues new session tokens
   async login(authCredentialDto: AuthCredentialsDto): Promise<TokensResponse> {
-    // Keep login error messages generic so we don't leak whether an account exists
-    const INVALID_LOGIN_MESSAGE =
-      'Unable to sign in with provided credentials.';
-
     const { deviceId, pin } = authCredentialDto;
     const phone = PhoneNumber.from(authCredentialDto.phone).value;
 
@@ -224,14 +220,14 @@ export class AuthService {
 
     if (!user) {
       await this.recordLoginFailure(phone);
-      throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
+      throw new UnauthorizedException('Phone number or PIN is incorrect.');
     }
 
     // 3. Verify the PIN matches the stored hash
     const isPinValid = await this.passwordService.verify(pin, user.pin);
     if (!isPinValid) {
       await this.recordLoginFailure(phone);
-      throw new UnauthorizedException('Invalid pin number');
+      throw new UnauthorizedException('Phone number or PIN is incorrect.');
     }
 
     // 4. Reset failure counters on a successful PIN match
@@ -239,8 +235,9 @@ export class AuthService {
 
     // 5. Check if the account is suspended or banned
     if (user.status !== AccountStatus.ACTIVE) {
-      // Intentionally masking account status behind a generic error message for security
-      throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
+      throw new ForbiddenException(
+        'Your account is temporarily restricted. Please contact support.',
+      );
     }
 
     // 6. Ensure they are logging in from a recognized device
