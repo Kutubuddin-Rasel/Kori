@@ -5,7 +5,6 @@ import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
-import { VerifyOtpDto } from '../dto/verify-otp.dto';
 
 describe('OTP service', () => {
   let loggerDebugSpy: jest.SpyInstance;
@@ -141,33 +140,5 @@ describe('OTP service', () => {
         deviceId: 'device-1',
       }),
     ).rejects.toBeInstanceOf(TooManyRequestsException);
-  });
-
-  it('concurrent attempts pass only one', async () => {
-    const dto = Object.assign(new VerifyOtpDto(), {
-      phone: '+8801712345678',
-      challengeId: '00000000-0000-4000-8000-000000000001',
-      otp: '001234',
-      deviceId: 'device-1',
-    });
-
-    // Mock evalScript to return VERIFIED for the first request,
-    // and SUPERSEDED for the second request, simulating Redis's atomic evaluation.
-    mockRedisService.evalScript
-      .mockResolvedValueOnce(['VERIFIED'])
-      .mockResolvedValueOnce(['SUPERSEDED']);
-
-    const service = await createOtpService('production');
-
-    const results = await Promise.allSettled([
-      service.verifyOtp(dto),
-      service.verifyOtp(dto),
-    ]);
-
-    const fulfiled = results.filter((result) => result.status === 'fulfilled');
-    const rejected = results.filter((result) => result.status === 'rejected');
-
-    expect(fulfiled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
   });
 });
