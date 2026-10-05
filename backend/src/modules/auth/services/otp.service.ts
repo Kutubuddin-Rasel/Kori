@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -20,6 +21,8 @@ import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { randomInt, randomUUID } from 'node:crypto';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
 import { VERIFY_OTP_SCRIPT } from '../scripts/verify-otp.script';
+import { AuthProofService } from './auth-proof.service';
+import { AccountStatus } from 'generated/prisma/enums';
 
 @Injectable()
 export class OtpService {
@@ -27,7 +30,6 @@ export class OtpService {
 
   // Configuration variables for OTP lifecycle and rate limiting
   private readonly OTP_TTL: number;
-  private readonly CLEARANCE_TTL: number;
   private readonly OTP_RESEND_COOLDOWN_SECONDS: number;
   private readonly OTP_MAX_FAILURES: number;
   private readonly OTP_FAILURE_WINDOW_SECONDS: number;
@@ -37,9 +39,9 @@ export class OtpService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly prisma: PrismaService,
+    private readonly authProofService: AuthProofService,
   ) {
     this.OTP_TTL = this.configService.getOrThrow<number>('OTP_TIME_LIMIT');
-    this.CLEARANCE_TTL = this.configService.getOrThrow<number>('CLEARANCE_TTL');
     this.OTP_RESEND_COOLDOWN_SECONDS = this.configService.getOrThrow<number>(
       'OTP_RESEND_COOLDOWN_SECONDS',
     );
@@ -53,10 +55,6 @@ export class OtpService {
   }
 
   // Redis key generators for tracking different OTP states
-  private registerClearanceKey(phone: string): string {
-    return `register_clearance:${phone}`;
-  }
-
   private otpChallengeKey(phone: string, chanllengeId: string): string {
     return `auth:otp:{${phone}}:challenge:${chanllengeId}`;
   }
@@ -228,35 +226,72 @@ export class OtpService {
     });
 
     if (existingUser) {
-      // Returning user: authorize this device for them
-      await this.prisma.trustDevice.upsert({
-        where: { deviceId },
-        update: { createdAt: new Date(), isAuthorized: true },
-        create: { userId: existingUser.id, deviceId, isAuthorized: true },
-      });
+      const enrollmentToken = VerifyOtpDto.deviceEnrollmentToken;
 
+      if (!enrollmentToken) {
+        throw new ForbiddenException({
+          code: 'DEVICE_ENROLLMENT_AUTHORIZATION_REQUIRED',
+          message: 'Start device verification from login first.',
+        });
+      }
+      if (existingUser.status !== AccountStatus.ACTIVE) {
+        throw new ForbiddenException({
+          code: 'ACCOUNT_RESTRICTED',
+
+          message:
+            'Your account is temporarily restricted. Please contact support.',
+        });
+      }
+
+      const authorizationStatus =
+        await this.authProofService.consumeDeviceEnrollmentAuthorization(
+          existingUser.id,
+          phone,
+          deviceId,
+          enrollmentToken,
+        );
+
+      if (authorizationStatus !== 'CONSUMED') {
+        throw new ForbiddenException({
+          code: 'DEVICE_ENROLLMENT_AUTHORIZATION_INVALID',
+
+          message: 'Device verification authorization is invalid or expired.',
+        });
+      }
+
+      await this.prisma.trustDevice.upsert({
+        where: { userId_deviceId: { userId: existingUser.id, deviceId } },
+        update: {
+          isAuthorized: true,
+          refreshTokenHash: null,
+          lastUsedAt: new Date(),
+        },
+        create: {
+          userId: existingUser.id,
+          deviceId,
+          isAuthorized: true,
+          refreshTokenHash: null,
+        },
+      });
       return {
-        message: 'Otp verified. User already exists. Please login',
+        message: 'Device verified. Please login again.',
         isRegistered: true,
       };
     }
 
-    // New user: grant them a temporary clearance to proceed with registration (e.g. PIN setup)
-    // This allows the next step without requiring a full account yet.
-    const clearanceKey = this.registerClearanceKey(phone);
-    const result = await this.redisService.set(clearanceKey, 'GRANTED', {
-      ttl: this.CLEARANCE_TTL,
-    });
-
-    if (!result) {
-      throw new InternalServerErrorException(
-        'Server error for setting clearance key',
+    const authorization =
+      await this.authProofService.issueRegistrationAuthorization(
+        phone,
+        deviceId,
       );
-    }
 
     return {
       message: 'Otp verified. Procced to PIN setup',
       isRegistered: false,
+      registrationAuthorization: {
+        token: authorization.token,
+        expiresIn: authorization.expiresIn,
+      },
     };
   }
 
