@@ -9,6 +9,7 @@ import { PasswordService } from './services/password.service';
 import { CookieService } from './services/cookie.service';
 import { JwtStrategy } from './strategies/jwt-strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { AuthProofService } from './services/auth-proof.service';
 
 @Module({
   imports: [WalletsModule, PassportModule, JwtModule.register({})],
@@ -16,6 +17,7 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
   providers: [
     AuthService,
     OtpService,
+    AuthProofService,
     PasswordService,
     CookieService,
     JwtStrategy,

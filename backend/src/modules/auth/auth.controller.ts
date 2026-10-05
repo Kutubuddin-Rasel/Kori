@@ -19,6 +19,7 @@ import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import type { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { OtpService } from './services/otp.service';
+import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -49,10 +50,10 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async register(
     @Res({ passthrough: true }) res: Response,
-    @Body() authCredentialDto: AuthCredentialsDto,
+    @Body() registerDto: RegisterDto,
   ): Promise<TokenResponse> {
     const { accessToken, refreshToken } =
-      await this.authService.register(authCredentialDto);
+      await this.authService.register(registerDto);
     this.cookieService.setRefreshCookies(res, refreshToken);
     return { accessToken };
   }
