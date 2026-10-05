@@ -44,7 +44,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     // Look up the trusted device in the database using the device ID from the JWT payload
     const trustDevice = await this.prisma.trustDevice.findUnique({
       where: {
-        deviceId: payload.deviceId,
+        userId_deviceId: { userId: payload.sub, deviceId: payload.deviceId },
       },
     });
 
