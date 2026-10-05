@@ -30,6 +30,8 @@ export class AllExceptionFilter implements ExceptionFilter {
     // Default status code and message for unexpected errors
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = 'Internal server error';
+    let code: string | undefined;
+    let details: unknown;
 
     // If the exception is an instance of HttpException, we can extract the status and message
     if (exception instanceof HttpException) {
@@ -42,16 +44,27 @@ export class AllExceptionFilter implements ExceptionFilter {
       } else {
         // If it's an object, we assume it has the structure defined in HttpExceptionResponse
         const errorObject = exceptionResponse as HttpExceptionResponse;
-        message = errorObject.message || 'An unexpected error occurred';
+        message = errorObject.message ?? 'An unexpected error occurred';
+        code = errorObject.code;
+        details = errorObject.details;
       }
     }
 
-    // Send the formatted error response back to the client
-    response.status(status).json({
+    const body: Record<string, unknown> = {
       success: false,
       timestamp: new Date().toISOString(),
       path: request.url,
       message: message,
-    });
+    };
+
+    if (code) {
+      body.code = code;
+    }
+    if (details !== undefined) {
+      body.details = details;
+    }
+
+    // Send the formatted error response back to the client
+    response.status(status).json(body);
   }
 }
