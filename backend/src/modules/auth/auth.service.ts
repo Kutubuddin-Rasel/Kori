@@ -21,6 +21,9 @@ import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
+import { RegisterDto } from './dto/register.dto';
+import { AuthProofService } from './services/auth-proof.service';
+import { DeviceVerificationRequiredException } from './exceptions/device-verification-required.exception';
 
 @Injectable()
 export class AuthService {
@@ -33,6 +36,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
+    private readonly authProofService: AuthProofService,
   ) {}
 
   // --- Rate Limiting Key Generators ---
@@ -134,29 +138,33 @@ export class AuthService {
   }
 
   // Completes the sign-up process for a new user
-  async register(
-    authCredentialDto: AuthCredentialsDto,
-  ): Promise<TokensResponse> {
-    const { pin, deviceId } = authCredentialDto;
-    const phone = PhoneNumber.from(authCredentialDto.phone).value;
+  async register(registerDto: RegisterDto): Promise<TokensResponse> {
+    const { pin, deviceId, registrationToken } = registerDto;
+    const phone = PhoneNumber.from(registerDto.phone).value;
 
-    // 1. Ensure they passed the OTP step first by checking for the clearance key
-    const clearanceKey = `register_clearance:${phone}`;
-    const hasClearance = await this.redisService.get(clearanceKey);
-
-    if (!hasClearance) {
-      throw new UnauthorizedException(
-        'Session expired. Please request for a new otp',
-      );
-    }
-
-    // 2. Double-check the phone number isn't already taken
+    // 1. Double-check the phone number isn't already taken
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
     });
 
     if (existingUser) {
       throw new ConflictException('Phone number is already registered.');
+    }
+
+    // 2. Do authorization check
+    const authorizationStatus =
+      await this.authProofService.consumeRegistrationAuthorization(
+        phone,
+        deviceId,
+        registrationToken,
+      );
+
+    if (authorizationStatus !== 'CONSUMED') {
+      throw new UnauthorizedException({
+        code: 'REGISTRATION_AUTHORIZATION_INVALID',
+        message:
+          'Registration authorization is invalid or expired. Verify your phone again.',
+      });
     }
 
     // 3. Hash their PIN for secure storage
@@ -192,9 +200,6 @@ export class AuthService {
         return { accessToken, refreshToken };
       });
 
-      // 5. Cleanup the OTP clearance key since they've fully registered
-      await this.redisService.del(clearanceKey);
-
       return tokens;
     } catch (error) {
       throw new InternalServerErrorException(
@@ -220,14 +225,20 @@ export class AuthService {
 
     if (!user) {
       await this.recordLoginFailure(phone);
-      throw new UnauthorizedException('Phone number or PIN is incorrect.');
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Phone number or PIN is incorrect.',
+      });
     }
 
     // 3. Verify the PIN matches the stored hash
     const isPinValid = await this.passwordService.verify(pin, user.pin);
     if (!isPinValid) {
       await this.recordLoginFailure(phone);
-      throw new UnauthorizedException('Phone number or PIN is incorrect.');
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Phone number or PIN is incorrect.',
+      });
     }
 
     // 4. Reset failure counters on a successful PIN match
@@ -235,23 +246,35 @@ export class AuthService {
 
     // 5. Check if the account is suspended or banned
     if (user.status !== AccountStatus.ACTIVE) {
-      throw new ForbiddenException(
-        'Your account is temporarily restricted. Please contact support.',
-      );
+      throw new ForbiddenException({
+        code: 'ACCOUNT_RESTRICTED',
+        message:
+          'Your account is temporarily restricted. Please contact support.',
+      });
     }
 
     // 6. Ensure they are logging in from a recognized device
-    const isDeviceTrusted = user.trustDevices.some(
+    const trustedDevice = user.trustDevices.find(
       (device) => device.deviceId === deviceId,
     );
 
-    if (!isDeviceTrusted) {
-      throw new ForbiddenException('UNRECOGNIZED_DEVICE');
+    if (!trustedDevice || !trustedDevice.isAuthorized) {
+      const authorization =
+        await this.authProofService.issueDeviceEnrollmentAuthorization(
+          user.id,
+          phone,
+          deviceId,
+        );
+
+      throw new DeviceVerificationRequiredException(
+        authorization.token,
+        authorization.expiresIn,
+      );
     }
 
     // 7. Issue new tokens and persist the refresh token hash
     const tokens = await this.getTokens(this.getPayload(user, deviceId));
-    await this.updateRefreshToken(deviceId, tokens.refreshToken);
+    await this.updateRefreshToken(user.id, deviceId, tokens.refreshToken);
 
     return {
       accessToken: tokens.accessToken,
@@ -261,6 +284,7 @@ export class AuthService {
 
   // Safely updates the stored refresh token hash for a specific device
   private async updateRefreshToken(
+    userId: string,
     deviceId: string,
     refreshToken: string,
   ): Promise<void> {
@@ -268,8 +292,8 @@ export class AuthService {
       const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
       await this.prisma.trustDevice.update({
-        where: { deviceId },
-        data: { refreshTokenHash },
+        where: { userId_deviceId: { userId, deviceId } },
+        data: { refreshTokenHash, lastUsedAt: new Date() },
       });
     } catch (error) {
       this.logger.error(
@@ -299,7 +323,11 @@ export class AuthService {
       const tokens = await this.getTokens(payload);
 
       // Rotate the refresh token in the database
-      await this.updateRefreshToken(payload.deviceId, tokens.refreshToken);
+      await this.updateRefreshToken(
+        payload.sub,
+        payload.deviceId,
+        tokens.refreshToken,
+      );
 
       return {
         accessToken: tokens.accessToken,
