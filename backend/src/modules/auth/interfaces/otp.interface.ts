@@ -4,9 +4,15 @@ export interface SendOtpResponse {
   readonly challengeId: string;
 }
 
+export interface RegistrationAuthorizationResponse {
+  readonly token: string;
+  readonly expiresIn: number;
+}
+
 export interface VerifyOtpResponse {
   readonly message: string;
   readonly isRegistered: boolean;
+  readonly registrationAuthorization?: RegistrationAuthorizationResponse;
 }
 
 export interface OtpChallenge {

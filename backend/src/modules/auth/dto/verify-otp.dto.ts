@@ -1,9 +1,12 @@
 import {
   IsNotEmpty,
+  IsOptional,
   IsPhoneNumber,
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
+  MinLength,
 } from 'class-validator';
 
 export class VerifyOtpDto {
@@ -25,4 +28,10 @@ export class VerifyOtpDto {
   @IsNotEmpty()
   @IsUUID('4')
   challengeId: string = '';
+
+  @IsOptional()
+  @IsString()
+  @MinLength(32)
+  @MaxLength(128)
+  deviceEnrollmentToken?: string;
 }
