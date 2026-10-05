@@ -166,7 +166,7 @@ model LedgerEntry{
 
 model TrustDevice{
   id  String  @id @default(uuid())  @db.Uuid
-  deviceId  String  @unique
+  deviceId  String
 
   userId  String  @db.Uuid
   user User @relation(fields: [userId],references: [id])
@@ -176,6 +176,6 @@ model TrustDevice{
   lastUsedAt  DateTime  @default(now())
   createdAt DateTime  @default(now())
 
-  @@index([userId])
+  @@unique([userId,deviceId])
   @@map("trusted_devices")
 }
