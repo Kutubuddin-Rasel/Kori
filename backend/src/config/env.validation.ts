@@ -69,11 +69,6 @@ class EnvironmentVariables {
   @IsNotEmpty()
   @Transform(({ value }) => Number(value))
   @IsNumber()
-  CLEARANCE_TTL: number = 300;
-
-  @IsNotEmpty()
-  @Transform(({ value }) => Number(value))
-  @IsNumber()
   IDEMPOTENCY_TTL_SECONDS: number = 86400;
 
   @IsNotEmpty()
@@ -95,6 +90,16 @@ class EnvironmentVariables {
   @Transform(({ value }) => Number(value))
   @Min(1)
   OTP_FAILURE_WINDOW_SECONDS: number = 600;
+
+  @IsInt()
+  @Transform(({ value }) => Number(value))
+  @Min(1)
+  REGISTRATION_AUTHORIZATION_TTL_SECONDS: number = 300;
+
+  @IsInt()
+  @Transform(({ value }) => Number(value))
+  @Min(1)
+  DEVICE_ENROLLMENT_AUTHORIZATION_TTL_SECONDS: number = 300;
 
   @IsInt()
   @Transform(({ value }) => Number(value))
