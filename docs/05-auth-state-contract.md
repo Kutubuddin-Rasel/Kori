@@ -123,19 +123,12 @@ Whether already-issued access tokens are immediately invalidated or remain valid
 
 ## External Authentication Error Policy
 
-The public API should avoid unnecessary account enumeration.
+Before primary credential verification, account-not-found and
+PIN-mismatch responses must be externally indistinguishable.
 
-For login, failures such as:
-
-- account not found
-- PIN mismatch
-- account unavailable
-
-should converge on a generic external authentication failure.
-
-Detailed internal reason codes may still be recorded safely for operational/security monitoring.
-
-A device-verification-required response may be distinct after primary credentials and account state have already been validated because it represents the next authentication step.
+After the PIN has been successfully verified, Kori may disclose
+actionable next-step account state such as account restriction or
+required device verification.
 
 ## Sensitive Logging Policy
 
