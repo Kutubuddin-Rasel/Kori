@@ -142,16 +142,7 @@ export class AuthService {
     const { pin, deviceId, registrationToken } = registerDto;
     const phone = PhoneNumber.from(registerDto.phone).value;
 
-    // 1. Double-check the phone number isn't already taken
-    const existingUser = await this.prisma.user.findUnique({
-      where: { phone },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Phone number is already registered.');
-    }
-
-    // 2. Do authorization check
+    // 1. Do authorization check to confirm this user had done the otp verification
     const authorizationStatus =
       await this.authProofService.consumeRegistrationAuthorization(
         phone,
@@ -165,6 +156,15 @@ export class AuthService {
         message:
           'Registration authorization is invalid or expired. Verify your phone again.',
       });
+    }
+
+    // 2. Check the phone number isn't already taken
+    const existingUser = await this.prisma.user.findUnique({
+      where: { phone },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('Phone number is already registered.');
     }
 
     // 3. Hash their PIN for secure storage

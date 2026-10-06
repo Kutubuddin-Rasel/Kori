@@ -8,6 +8,8 @@ import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
+import { AuthProofService } from './services/auth-proof.service';
+import { DeviceVerificationRequiredException } from './exceptions/device-verification-required.exception';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -26,6 +28,7 @@ describe('AuthService', () => {
     set: jest.Mock;
     del: jest.Mock;
     incrementWithTtl: jest.Mock;
+    evalScript: jest.Mock;
   };
 
   let prismaServiceStub: {
@@ -34,6 +37,7 @@ describe('AuthService', () => {
     };
     trustDevice: {
       update: jest.Mock;
+      find: jest.Mock;
     };
     $transaction: jest.Mock;
   };
@@ -45,6 +49,11 @@ describe('AuthService', () => {
 
   let jwtServiceStub: {
     signAsync: jest.Mock;
+  };
+
+  let authProofService: {
+    consumeRegistrationAuthorization: jest.Mock;
+    issueDeviceEnrollmentAuthorization: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -69,6 +78,7 @@ describe('AuthService', () => {
       set: jest.fn().mockResolvedValue(true),
       del: jest.fn().mockResolvedValue(true),
       incrementWithTtl: jest.fn().mockResolvedValue(1),
+      evalScript: jest.fn().mockResolvedValue(null),
     };
 
     prismaServiceStub = {
@@ -77,6 +87,7 @@ describe('AuthService', () => {
       },
       trustDevice: {
         update: jest.fn(),
+        find: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -88,6 +99,11 @@ describe('AuthService', () => {
 
     jwtServiceStub = {
       signAsync: jest.fn(),
+    };
+
+    authProofService = {
+      consumeRegistrationAuthorization: jest.fn().mockResolvedValue('INVALID'),
+      issueDeviceEnrollmentAuthorization: jest.fn(),
     };
 
     const module = await Test.createTestingModule({
@@ -117,25 +133,29 @@ describe('AuthService', () => {
           provide: JwtService,
           useValue: jwtServiceStub,
         },
+        {
+          provide: AuthProofService,
+          useValue: authProofService,
+        },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
   });
 
-  it('reject registration when OTP clearance is missing', async () => {
+  it('reject registration when registration token is missing', async () => {
     const credentials = {
       phone: '+8801712345678',
       pin: '1234',
       deviceId: 'device-1',
+      registrationToken: '',
     };
 
+    authProofService.consumeRegistrationAuthorization.mockResolvedValueOnce(
+      'MISSING',
+    );
     await expect(service.register(credentials)).rejects.toBeInstanceOf(
       UnauthorizedException,
-    );
-
-    expect(redisServiceStub.get).toHaveBeenCalledWith(
-      `register_clearance:${credentials.phone}`,
     );
 
     expect(prismaServiceStub.user.findUnique).not.toHaveBeenCalled();
@@ -150,9 +170,12 @@ describe('AuthService', () => {
       phone: '+8801712345678',
       pin: '1234',
       deviceId: 'device-1',
+      registrationToken: '',
     };
 
-    redisServiceStub.get.mockResolvedValueOnce('GRANTED');
+    authProofService.consumeRegistrationAuthorization.mockResolvedValueOnce(
+      'CONSUMED',
+    );
 
     prismaServiceStub.user.findUnique.mockResolvedValueOnce({
       id: 'user-1',
@@ -162,9 +185,6 @@ describe('AuthService', () => {
     await expect(service.register(credentials)).rejects.toBeInstanceOf(
       ConflictException,
     );
-
-    const key = `register_clearance:${credentials.phone}`;
-    expect(redisServiceStub.get).toHaveBeenCalledWith(key);
 
     expect(prismaServiceStub.user.findUnique).toHaveBeenCalledWith({
       where: { phone: credentials.phone },
@@ -176,14 +196,17 @@ describe('AuthService', () => {
     expect(walletsServiceStub.createPersonalWallet).not.toHaveBeenCalled();
   });
 
-  it('register a new user when OTP clearance is valid', async () => {
+  it('register a new user when registration token is valid', async () => {
     const credentials = {
       phone: '+8801712345678',
       pin: '1234',
       deviceId: 'device-1',
+      registrationToken: '',
     };
 
-    redisServiceStub.get.mockResolvedValueOnce('GRANTED');
+    authProofService.consumeRegistrationAuthorization.mockResolvedValueOnce(
+      'CONSUMED',
+    );
     prismaServiceStub.user.findUnique.mockResolvedValueOnce(null);
 
     passwordServiceStub.hash
@@ -253,10 +276,6 @@ describe('AuthService', () => {
         isAuthorized: true,
       },
     });
-
-    expect(redisServiceStub.del).toHaveBeenCalledWith(
-      `register_clearance:${credentials.phone}`,
-    );
   });
 
   it('throttles login before querying the user when a throttle exists', async () => {
@@ -319,5 +338,31 @@ describe('AuthService', () => {
         ttl: 60,
       },
     );
+  });
+
+  it('issue device enrollment authorization when device is new', async () => {
+    redisServiceStub.getStrict.mockResolvedValueOnce(null);
+    prismaServiceStub.user.findUnique.mockResolvedValueOnce({
+      id: 'user-1',
+      phone: '+8801712345678',
+      pin: 'hash-pin',
+      status: 'ACTIVE',
+      role: 'CUSTOMER',
+      trustDevices: ['device-2'],
+    });
+    passwordServiceStub.verify.mockResolvedValueOnce(true);
+    prismaServiceStub.trustDevice.find.mockResolvedValueOnce(null);
+    authProofService.issueDeviceEnrollmentAuthorization.mockResolvedValueOnce({
+      token: 'test-token',
+      expiresIn: 300,
+    });
+
+    await expect(
+      service.login({
+        phone: '+8801712345678',
+        pin: '1111',
+        deviceId: 'device-1',
+      }),
+    ).rejects.toBeInstanceOf(DeviceVerificationRequiredException);
   });
 });
