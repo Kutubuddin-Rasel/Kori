@@ -1,7 +1,7 @@
 export interface HttpExceptionResponse {
   statusCode: number;
-  message?: string | string[];
+  message: string | string[];
   error?: string;
   code?: string;
-  details?: string;
+  details?: unknown;
 }
