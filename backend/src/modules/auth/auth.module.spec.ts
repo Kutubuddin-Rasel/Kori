@@ -32,7 +32,6 @@ describe('AuthModule compositon', () => {
               REFRESH_TOKEN_EXPIRY: '7d',
 
               OTP_TIME_LIMIT: 180,
-              CLEARANCE_TTL: 300,
               OTP_RESEND_COOLDOWN_SECONDS: 60,
               OTP_MAX_FAILURES: 10,
               OTP_FAILURE_WINDOW_SECONDS: 600,
