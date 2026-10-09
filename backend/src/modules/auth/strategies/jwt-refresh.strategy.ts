@@ -11,6 +11,13 @@ export class JwtRefreshStrategy extends PassportStrategy(
   Strategy,
   'jwt-refresh',
 ) {
+  /**
+   * RFC 4122 Section 4.4 (UUID Version 4) Validator
+   * Matches: 8 hex - 4 hex - 4 hex (starts with 4) - 4 hex (starts with 8, 9, a, or b) - 12 hex
+   */
+  private UUID_V4_REGEX =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   constructor(configService: ConfigService, cookieService: CookieService) {
     // Call the super constructor with the appropriate options for the JWT Refresh strategy
     super({
@@ -24,7 +31,15 @@ export class JwtRefreshStrategy extends PassportStrategy(
     });
   }
 
-  // The validate method is called by Passport to validate the Refresh JWT payload
+  private isUuidV4(value: unknown): value is string {
+    return typeof value === 'string' && this.UUID_V4_REGEX.test(value);
+  }
+
+  private isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  // The validate method is called by Passport ONLY AFTER the HMAC-SHA256 signature is verified
   validate(payload: unknown): RefreshTokenPayload {
     if (!payload || typeof payload !== 'object') {
       throw new UnauthorizedException('Invalid refresh token');
@@ -32,18 +47,25 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
     const value = payload as Record<string, unknown>;
 
+    // 1. Structural check: tokenUse discriminator
+    if (value.tokenUse !== 'refresh') {
+      throw new UnauthorizedException('Invalid token purpose');
+    }
+
+    // 2. Structural check: deviceId format
+    if (!this.isNonEmptyString(value.deviceId) || value.deviceId.length > 128) {
+      throw new UnauthorizedException('Invalid device identifier in token');
+    }
+
+    // 3. Cryptographic UUID v4 syntax validation for sub, sid, and jti
     if (
-      typeof value.sub !== 'string' ||
-      typeof value.deviceId !== 'string' ||
-      typeof value.sid !== 'string' ||
-      typeof value.jti !== 'string' ||
-      !value.sub ||
-      !value.deviceId ||
-      !value.sid ||
-      !value.jti ||
-      value.tokenUse !== 'refresh'
+      !this.isUuidV4(value.sub) ||
+      !this.isUuidV4(value.sid) ||
+      !this.isUuidV4(value.jti)
     ) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(
+        'Malformed token cryptographic identifiers',
+      );
     }
 
     return {
