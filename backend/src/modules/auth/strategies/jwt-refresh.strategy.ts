@@ -5,74 +5,53 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { CookieService } from '../services/cookie.service';
 import { RefreshTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import { PasswordService } from '../services/password.service';
 
 @Injectable()
 export class JwtRefreshStrategy extends PassportStrategy(
   Strategy,
   'jwt-refresh',
 ) {
-  constructor(
-    configService: ConfigService,
-    private readonly cookieService: CookieService,
-    private readonly prisma: PrismaService,
-    private readonly passwordService: PasswordService,
-  ) {
+  constructor(configService: ConfigService, cookieService: CookieService) {
     // Call the super constructor with the appropriate options for the JWT Refresh strategy
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
-        (req: Request) => this.cookieService.extractRefreshCookie(req),
+        (req: Request) => cookieService.extractRefreshCookie(req),
       ]),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
       passReqToCallback: true,
+      algorithms: ['HS256'],
     });
   }
 
-  // The validate method is called by Passport to validate the JWT payload and the refresh token
-  async validate(
-    req: Request,
-    payload: RefreshTokenPayload,
-  ): Promise<RefreshTokenPayload> {
-    // Extract the refresh token from the request using the cookie service
-    const refreshToken = this.cookieService.extractRefreshCookie(req);
-    if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token not found');
-    }
-
-    // Look up the trusted device in the database using the device ID from the JWT payload
-    const trustDevice = await this.prisma.trustDevice.findUnique({
-      where: {
-        userId_deviceId: { userId: payload.sub, deviceId: payload.deviceId },
-      },
-    });
-
-    if (!trustDevice) {
-      throw new UnauthorizedException('Unrecognized device');
-    }
-
-    if (!trustDevice.isAuthorized) {
-      throw new UnauthorizedException(
-        'Please device has been revoked. Please login again',
-      );
-    }
-
-    if (!trustDevice.refreshTokenHash) {
-      throw new UnauthorizedException(
-        'No active session found for this device',
-      );
-    }
-
-    // Verify the refresh token by comparing it with the stored hash in the database
-    const match = await this.passwordService.verify(
-      refreshToken,
-      trustDevice.refreshTokenHash,
-    );
-
-    if (!match) {
+  // The validate method is called by Passport to validate the Refresh JWT payload
+  validate(payload: unknown): RefreshTokenPayload {
+    if (!payload || typeof payload !== 'object') {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    return payload;
+
+    const value = payload as Record<string, unknown>;
+
+    if (
+      typeof value.sub !== 'string' ||
+      typeof value.deviceId !== 'string' ||
+      typeof value.sid !== 'string' ||
+      typeof value.jti !== 'string' ||
+      !value.sub ||
+      !value.deviceId ||
+      !value.sid ||
+      !value.jti ||
+      value.tokenUse !== 'refresh'
+    ) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return {
+      sub: value.sub,
+      deviceId: value.deviceId,
+      sid: value.sid,
+      jti: value.jti,
+      tokenUse: 'refresh',
+    };
   }
 }

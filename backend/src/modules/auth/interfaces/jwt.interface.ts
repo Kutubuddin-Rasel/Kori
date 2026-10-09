@@ -1,9 +1,12 @@
 import { Role } from 'generated/prisma/enums';
 
 // This file defines the interfaces for the JWT payloads and the authentication cookie used in the authentication module.
-export interface RefreshTokenPayload extends AccessTokenPayload {
-  readonly phone: string;
+export interface RefreshTokenPayload {
+  readonly sub: string;
   readonly deviceId: string;
+  readonly sid: string;
+  readonly jti: string;
+  readonly tokenUse: 'refresh';
 }
 
 export interface AccessTokenPayload {
