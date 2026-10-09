@@ -12,18 +12,21 @@ import { AuthCookie } from 'src/modules/auth/interfaces/jwt.interface';
 export class CookieService {
   private readonly isProduction: boolean;
   private logger = new Logger(CookieService.name);
+  private readonly refreshCookiePath = 'api/v1/auth';
+  private secure: boolean;
+  private sameSite: 'strict' | 'lax' | 'none';
 
   constructor(private readonly configService: ConfigService) {
     // Determine if the application is running in production
     this.isProduction =
       configService.getOrThrow<string>('NODE_ENV') === 'production';
+    // Determine if the application is running in production to set secure cookie attributes.
+    this.secure = this.isProduction;
+    this.sameSite = this.secure ? 'strict' : 'lax';
   }
 
   // Sets the refresh token in an HTTP-only cookie with appropriate security settings.
   setRefreshCookies(res: Response, refreshToken: string): void {
-    // Determine if the application is running in production to set secure cookie attributes.
-    const secure = this.isProduction;
-    const sameSite: 'strict' | 'lax' | 'none' = secure ? 'strict' : 'lax';
     // Retrieve the refresh token expiry time from the configuration, ensuring it is defined.
     const expiry = this.configService.getOrThrow<ms.StringValue>(
       'REFRESH_TOKEN_EXPIRY',
@@ -33,10 +36,10 @@ export class CookieService {
       // Set the refresh token cookie with security attributes and expiration time.
       res.cookie('refresh_token', refreshToken, {
         httpOnly: true,
-        sameSite,
-        secure,
+        sameSite: this.sameSite,
+        secure: this.secure,
         maxAge: ms(expiry),
-        path: '/auth',
+        path: this.refreshCookiePath,
       });
     } catch (error) {
       this.logger.error(
@@ -53,7 +56,10 @@ export class CookieService {
     // Clear the refresh token cookie by setting it to an empty value and specifying the same path.
     try {
       res.clearCookie('refresh_token', {
-        path: '/auth',
+        httpOnly: true,
+        sameSite: this.sameSite,
+        secure: this.secure,
+        path: this.refreshCookiePath,
       });
     } catch (error) {
       this.logger.error(
