@@ -17,13 +17,13 @@ import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
 import { AccountStatus, User } from '../../../generated/prisma/client';
-import { Prisma } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
 import { RegisterDto } from './dto/register.dto';
 import { AuthProofService } from './services/auth-proof.service';
 import { DeviceVerificationRequiredException } from './exceptions/device-verification-required.exception';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -126,17 +126,6 @@ export class AuthService {
 
   // --- Auth Core Logic ---
 
-  // Constructs the base payload we embed in refresh tokens
-  private getPayload(user: User, deviceId: string): RefreshTokenPayload {
-    const payload: RefreshTokenPayload = {
-      sub: user.id,
-      phone: user.phone,
-      role: user.role,
-      deviceId,
-    };
-    return payload;
-  }
-
   // Completes the sign-up process for a new user
   async register(registerDto: RegisterDto): Promise<TokensResponse> {
     const { pin, deviceId, registrationToken } = registerDto;
@@ -176,13 +165,17 @@ export class AuthService {
         // Create the core user record
         const newUser = await tx.user.create({ data: { phone, pin: hashPin } });
 
+        // Generate session and jwt id
+        const sid = randomUUID();
+        const jti = randomUUID();
+
         // Generate their initial JWT session tokens
         const { accessToken, refreshToken } = await this.getTokens(
-          this.getPayload(newUser, deviceId),
+          newUser,
+          deviceId,
+          sid,
+          jti,
         );
-
-        // We only store the hash of the refresh token to prevent token theft from the DB
-        const refreshTokenHash = await this.passwordService.hash(refreshToken);
 
         // Provision their initial wallet
         await this.walletsService.createPersonalWallet(tx, newUser.id);
@@ -192,8 +185,9 @@ export class AuthService {
           data: {
             userId: newUser.id,
             deviceId,
-            refreshTokenHash,
             isAuthorized: true,
+            refreshSessionId: sid,
+            currentRefreshJti: jti,
           },
         });
 
@@ -273,8 +267,30 @@ export class AuthService {
     }
 
     // 7. Issue new tokens and persist the refresh token hash
-    const tokens = await this.getTokens(this.getPayload(user, deviceId));
-    await this.updateRefreshToken(user.id, deviceId, tokens.refreshToken);
+    const sid = randomUUID();
+    const jti = randomUUID();
+    const tokens = await this.getTokens(user, deviceId, sid, jti);
+
+    const updated = await this.prisma.trustDevice.updateMany({
+      where: {
+        userId: user.id,
+        deviceId,
+        isAuthorized: true,
+        user: { is: { status: AccountStatus.ACTIVE } },
+      },
+      data: {
+        refreshSessionId: sid,
+        currentRefreshJti: jti,
+        lastUsedAt: new Date(),
+      },
+    });
+
+    if (updated.count !== 1) {
+      throw new UnauthorizedException({
+        code: 'SESSION_ESTABLISHMENT_FAILED',
+        message: 'Unable to establish session. Please try again.',
+      });
+    }
 
     return {
       accessToken: tokens.accessToken,
@@ -282,95 +298,124 @@ export class AuthService {
     };
   }
 
-  // Safely updates the stored refresh token hash for a specific device
-  private async updateRefreshToken(
-    userId: string,
-    deviceId: string,
-    refreshToken: string,
-  ): Promise<void> {
-    try {
-      const refreshTokenHash = await this.passwordService.hash(refreshToken);
-
-      await this.prisma.trustDevice.update({
-        where: { userId_deviceId: { userId, deviceId } },
-        data: { refreshTokenHash, lastUsedAt: new Date() },
-      });
-    } catch (error) {
-      this.logger.error(
-        'Failed to update refresh token',
-        error instanceof Error ? error.stack : error,
-      );
-
-      // P2025 is Prisma's "Record to update not found" error code
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        const prismaRecordToUpdateNotFoundCode = 'P2025';
-        if (error.code === prismaRecordToUpdateNotFoundCode) {
-          throw new UnauthorizedException(
-            'This device is not found in trust device',
-          );
-        }
-      }
-
-      throw new InternalServerErrorException(
-        'An error occured while refreshing session',
-      );
-    }
-  }
-
   // Reissues new tokens when the access token expires, provided a valid refresh token
   async refreshTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
-    try {
-      const tokens = await this.getTokens(payload);
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
 
-      // Rotate the refresh token in the database
-      await this.updateRefreshToken(
-        payload.sub,
-        payload.deviceId,
-        tokens.refreshToken,
-      );
-
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      };
-    } catch (error) {
-      this.logger.error(
-        'Failed to refresh tokens',
-        error instanceof Error ? error.stack : error,
-      );
-      throw new InternalServerErrorException('An error occured while refresh');
+    if (!user || user.status !== AccountStatus.ACTIVE) {
+      throw new UnauthorizedException({
+        code: 'SESSION_INAVLID',
+        message: 'Your session is no longer valid. Please sign in again.',
+      });
     }
+
+    const newJti = randomUUID();
+    const newTokens = await this.getTokens(
+      user,
+      payload.deviceId,
+      payload.sid,
+      newJti,
+    );
+
+    // Rotate the refresh token in the database
+    const result = await this.prisma.trustDevice.updateMany({
+      where: {
+        userId: payload.sub,
+        deviceId: payload.deviceId,
+        refreshSessionId: payload.sid,
+        currentRefreshJti: payload.jti,
+        isAuthorized: true,
+        user: {
+          is: {
+            status: AccountStatus.ACTIVE,
+          },
+        },
+      },
+      data: {
+        currentRefreshJti: newJti,
+        lastUsedAt: new Date(),
+      },
+    });
+
+    if (result.count === 1) {
+      return newTokens;
+    }
+
+    const device = await this.prisma.trustDevice.findUnique({
+      where: {
+        userId_deviceId: { userId: payload.sub, deviceId: payload.deviceId },
+      },
+      select: {
+        isAuthorized: true,
+        refreshSessionId: true,
+        currentRefreshJti: true,
+      },
+    });
+
+    if (
+      device?.isAuthorized &&
+      device.refreshSessionId === payload.sid &&
+      device.currentRefreshJti !== null
+    ) {
+      await this.prisma.trustDevice.updateMany({
+        where: {
+          userId: payload.sub,
+          deviceId: payload.deviceId,
+          refreshSessionId: payload.sid,
+          isAuthorized: true,
+          currentRefreshJti: {
+            not: null,
+          },
+        },
+        data: {
+          refreshSessionId: null,
+          currentRefreshJti: null,
+        },
+      });
+    }
+
+    throw new UnauthorizedException({
+      code: 'SESSION_INVALID',
+      message: 'Your session is no longer valid. Please sign in again.',
+    });
   }
 
   // Generates both short-lived access tokens and longer-lived refresh tokens
   private async getTokens(
-    payload: RefreshTokenPayload,
+    user: Pick<User, 'id' | 'role'>,
+    deviceId: string,
+    sid: string,
+    jti: string,
   ): Promise<TokensResponse> {
     // Generate both tokens concurrently for speed
     const [accessToken, refreshToken] = await Promise.all([
       // Access token: minimal payload (sub, role) to keep headers small
       this.jwtService.signAsync(
-        { sub: payload.sub, role: payload.role },
+        { sub: user.id, role: user.role },
         {
           secret: this.configService.getOrThrow<string>('ACCESS_TOKEN_SECRET'),
           expiresIn: this.configService.getOrThrow<StringValue>(
             'ACCESS_TOKEN_EXPIRY',
           ),
+          algorithm: 'HS256',
         },
       ),
-      // Refresh token: includes phone and deviceId so we know exactly which session to refresh
+      // Refresh token: includes sessionId, deviceId, and JWT ID so we know exactly which session to refresh
       this.jwtService.signAsync(
         {
-          sub: payload.sub,
-          phone: payload.phone,
-          role: payload.role,
-          deviceId: payload.deviceId,
+          sub: user.id,
+          deviceId,
+          sid,
+          jti,
         },
         {
           secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
           expiresIn: this.configService.getOrThrow<StringValue>(
             'REFRESH_TOKEN_EXPIRY',
           ),
+          algorithm: 'HS256',
         },
       ),
     ]);
