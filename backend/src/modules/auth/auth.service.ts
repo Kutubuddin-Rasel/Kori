@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
-  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -27,7 +26,6 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
-  private logger = new Logger(AuthService.name);
 
   constructor(
     private readonly walletsService: WalletsService,

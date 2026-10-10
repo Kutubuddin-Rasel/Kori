@@ -1,29 +1,21 @@
 import {
   IsNotEmpty,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { SendOtpDto } from './send-otp.dto';
 
-export class VerifyOtpDto {
-  @IsNotEmpty()
-  @IsPhoneNumber('BD')
-  phone: string = '';
-
+export class VerifyOtpDto extends SendOtpDto {
   @IsNotEmpty()
   @IsString()
   @Matches(/^[0-9]{6}$/, {
     message: 'Otp must be exactly 6 digits',
   })
   otp: string = '';
-
-  @IsNotEmpty()
-  @IsString()
-  deviceId: string = '';
 
   @IsNotEmpty()
   @IsUUID('4')
