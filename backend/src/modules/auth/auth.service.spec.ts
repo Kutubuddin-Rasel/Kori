@@ -369,7 +369,7 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(DeviceVerificationRequiredException);
   });
 
-  describe('Test 1: Login session generation and persistence', () => {
+  describe('Login session generation and persistence', () => {
     it('issues new sid and jti and stores both together in trustDevice', async () => {
       const user = {
         id: 'user-uuid-1',

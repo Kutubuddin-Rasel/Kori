@@ -50,7 +50,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     await moduleRef.close();
   });
 
-  it('Test 4: At most one rotation succeeds; strict replay revokes resulting session in PostgreSQL', async () => {
+  it('at most one rotation succeeds; strict replay revokes resulting session in PostgreSQL', async () => {
     const initialSid = randomUUID();
     const initialJti = randomUUID();
 

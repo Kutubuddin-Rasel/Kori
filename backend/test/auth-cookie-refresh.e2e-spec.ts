@@ -10,7 +10,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role } from '../src/domain/enums';
 import { AccountStatus } from '../generated/prisma/client';
-import { randomUUID } from 'crypto';
 
 describe('Auth Cookie & Refresh Flow (e2e)', () => {
   let app: INestApplication<App>;
@@ -74,7 +73,7 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
 
   let validRefreshCookie: string;
 
-  it('Test 11: Refresh cookie issued with correct attributes and /api/v1/auth path upon login', async () => {
+  it('issues refresh cookie with correct attributes and /api/v1/auth path upon login', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({
@@ -86,11 +85,13 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
 
     expect(response.body).toHaveProperty('accessToken');
 
-    const cookies = response.headers['set-cookie'];
+    const cookies = response.headers['set-cookie'] as unknown as
+      | string[]
+      | undefined;
     expect(cookies).toBeDefined();
     expect(Array.isArray(cookies)).toBe(true);
 
-    const refreshCookieHeader = (cookies as string[]).find((c) =>
+    const refreshCookieHeader = cookies?.find((c) =>
       c.startsWith('refresh_token='),
     );
     expect(refreshCookieHeader).toBeDefined();
@@ -106,7 +107,7 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
     expect(validRefreshCookie).toBeTruthy();
   });
 
-  it('Test 12: Browser-style cookie refresh successfully rotates token via cookie parser', async () => {
+  it('successfully rotates token via browser-style cookie parser on refresh', async () => {
     expect(validRefreshCookie).toBeTruthy();
 
     // Query pre-refresh state in DB
@@ -127,9 +128,11 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
     expect(response.body).toHaveProperty('accessToken');
 
     // Verify fresh rotated cookie in response
-    const cookies = response.headers['set-cookie'] as string[];
+    const cookies = response.headers['set-cookie'] as unknown as
+      | string[]
+      | undefined;
     expect(cookies).toBeDefined();
-    const newRefreshCookieHeader = cookies.find((c) =>
+    const newRefreshCookieHeader = cookies?.find((c) =>
       c.startsWith('refresh_token='),
     );
     expect(newRefreshCookieHeader).toBeDefined();
@@ -145,7 +148,7 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
     expect(postDevice?.refreshSessionId).toBe(preDevice?.refreshSessionId);
   });
 
-  it('Test 8: Forged or expired JWT returns 401 without mutating database session', async () => {
+  it('rejects forged or expired JWT with 401 without mutating database session', async () => {
     // 1. Snapshot database session state before forged attempt
     const deviceBefore = await prisma.trustDevice.findUnique({
       where: {

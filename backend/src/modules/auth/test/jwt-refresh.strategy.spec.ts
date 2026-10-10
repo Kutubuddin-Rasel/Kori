@@ -41,7 +41,7 @@ describe('JwtRefreshStrategy', () => {
     });
   });
 
-  describe('Test 7: Signed JWT with missing or malformed jti', () => {
+  describe('Signed JWT with missing or malformed jti', () => {
     it('throws UnauthorizedException when jti is missing', () => {
       const payloadWithoutJti = { ...validPayload };
       delete (payloadWithoutJti as Record<string, unknown>).jti;

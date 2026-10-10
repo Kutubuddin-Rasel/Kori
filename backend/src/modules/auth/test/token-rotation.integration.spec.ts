@@ -68,7 +68,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     tokenUse: 'refresh',
   };
 
-  describe('Test 2: Normal refresh A → B', () => {
+  describe('Normal refresh A → B', () => {
     it('rotates currentRefreshJti to B (count: 1) and returns fresh tokens', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -126,7 +126,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     });
   });
 
-  describe('Test 3: Reuse A after rotation (Replay Attack Detection)', () => {
+  describe('Reuse A after rotation (Replay Attack Detection)', () => {
     it('detects replay of old jti A, completely revokes the session, and throws 401', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -174,7 +174,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     });
   });
 
-  describe('Test 5: Old S1 token after new S2 login (Old-Session Isolation)', () => {
+  describe('Old S1 token after new S2 login (Old-Session Isolation)', () => {
     it('rejects old S1 token with 401 but leaves active S2 session intact', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -207,7 +207,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     });
   });
 
-  describe('Test 6: Revoked device refresh', () => {
+  describe('Revoked device refresh', () => {
     it('rejects with 401 and does not rotate tokens when device is deauthorized', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -234,7 +234,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     });
   });
 
-  describe('Test 9: User suspended before refresh', () => {
+  describe('User suspended before refresh', () => {
     it('throws 401 immediately if user status is SUSPENDED without touching trustDevice', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -252,7 +252,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
     });
   });
 
-  describe('Test 10: Account role changes before refresh', () => {
+  describe('Account role changes before refresh', () => {
     it('issues new access token reflecting the updated role from database', async () => {
       // User was promoted from CUSTOMER to AGENT in DB
       prismaMock.user.findUnique.mockResolvedValueOnce({
