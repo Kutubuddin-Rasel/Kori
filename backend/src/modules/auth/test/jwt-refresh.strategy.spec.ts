@@ -1,6 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtRefreshStrategy } from './jwt-refresh.strategy';
+import { JwtRefreshStrategy } from '../strategies/jwt-refresh.strategy';
 import { CookieService } from '../services/cookie.service';
 
 describe('JwtRefreshStrategy', () => {
