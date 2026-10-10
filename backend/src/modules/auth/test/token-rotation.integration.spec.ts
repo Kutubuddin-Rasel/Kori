@@ -162,9 +162,10 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
           deviceId: basePayload.deviceId,
           refreshSessionId: basePayload.sid,
           isAuthorized: true,
-          currentRefreshJti: {
-            not: null,
-          },
+          AND: [
+            { currentRefreshJti: { not: null } },
+            { currentRefreshJti: { not: basePayload.jti } },
+          ],
         },
         data: {
           refreshSessionId: null,
@@ -279,6 +280,38 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
         }),
         expect.any(Object),
       );
+    });
+  });
+
+  describe('Failed CAS without JTI advancement', () => {
+    it('rejects with 401 but does not trigger replay revocation when stored JTI matches presented JTI', async () => {
+      prismaMock.user.findUnique.mockResolvedValueOnce({
+        id: basePayload.sub,
+        role: Role.CUSTOMER,
+        status: AccountStatus.ACTIVE,
+      });
+
+      jwtServiceMock.signAsync
+        .mockResolvedValueOnce('access-token-new')
+        .mockResolvedValueOnce('refresh-token-new');
+
+      // 1. Initial CAS update fails (count = 0)
+      prismaMock.trustDevice.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      // 2. Database lookup shows currentRefreshJti has NOT moved (still basePayload.jti)
+      prismaMock.trustDevice.findUnique.mockResolvedValueOnce({
+        isAuthorized: true,
+        refreshSessionId: basePayload.sid,
+        currentRefreshJti: basePayload.jti,
+      });
+
+      // 3. Act & Assert: Throws 401
+      await expect(authService.refreshTokens(basePayload)).rejects.toThrow(
+        UnauthorizedException,
+      );
+
+      // 4. Assert: updateMany was called ONLY ONCE (the initial CAS), NOT for revocation
+      expect(prismaMock.trustDevice.updateMany).toHaveBeenCalledTimes(1);
     });
   });
 });

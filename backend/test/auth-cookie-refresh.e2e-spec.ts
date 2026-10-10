@@ -2,14 +2,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
+import { validate } from '../src/config/env.validation';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
 import { PasswordService } from '../src/modules/auth/services/password.service';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Role } from '../src/domain/enums';
 import { AccountStatus } from '../generated/prisma/client';
+import { PrismaModule } from 'src/infrastructure/prisma/prisma.module';
+import { RedisModule } from 'src/infrastructure/redis/redis.module';
+import { AuthModule } from 'src/modules/auth/auth.module';
 
 describe('Auth Cookie & Refresh Flow (e2e)', () => {
   let app: INestApplication<App>;
@@ -25,7 +28,15 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          validate,
+        }),
+        PrismaModule,
+        RedisModule,
+        AuthModule,
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();

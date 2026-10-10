@@ -6,6 +6,7 @@ import { Role } from 'src/domain/enums';
 import { AccountStatus } from 'generated/prisma/client';
 import { RefreshTokenPayload } from '../interfaces/jwt.interface';
 import { randomUUID } from 'crypto';
+import { UnauthorizedException } from '@nestjs/common';
 
 describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', () => {
   let moduleRef: TestingModule;
@@ -108,5 +109,81 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(deviceState?.currentRefreshJti).not.toBe(initialJti);
     expect(deviceState?.refreshSessionId).toBeNull();
     expect(deviceState?.currentRefreshJti).toBeNull();
+  });
+
+  it('rejects S1 without revoking newer session S2', async () => {
+    const sid1 = randomUUID();
+    const jti1 = randomUUID();
+
+    const sid2 = randomUUID();
+    const jti2 = randomUUID();
+
+    // Establish the first session.
+    await prisma.trustDevice.update({
+      where: {
+        userId_deviceId: {
+          userId: testUserId,
+          deviceId: testDeviceId,
+        },
+      },
+      data: {
+        isAuthorized: true,
+        refreshSessionId: sid1,
+        currentRefreshJti: jti1,
+      },
+    });
+
+    // Simulate the state written by a newer successful login.
+    await prisma.trustDevice.update({
+      where: {
+        userId_deviceId: {
+          userId: testUserId,
+          deviceId: testDeviceId,
+        },
+      },
+      data: {
+        refreshSessionId: sid2,
+        currentRefreshJti: jti2,
+      },
+    });
+
+    const oldPayload: RefreshTokenPayload = {
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid: sid1,
+      jti: jti1,
+      tokenUse: 'refresh',
+    };
+
+    await expect(authService.refreshTokens(oldPayload)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    // Old S1 must not destroy new S2.
+    const device = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: {
+          userId: testUserId,
+          deviceId: testDeviceId,
+        },
+      },
+    });
+
+    expect(device.refreshSessionId).toBe(sid2);
+    expect(device.currentRefreshJti).toBe(jti2);
+
+    // The current session must remain renewable.
+    const currentPayload: RefreshTokenPayload = {
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid: sid2,
+      jti: jti2,
+      tokenUse: 'refresh',
+    };
+
+    await expect(authService.refreshTokens(currentPayload)).resolves.toEqual({
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+    });
   });
 });
