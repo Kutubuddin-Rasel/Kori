@@ -38,6 +38,7 @@ describe('AuthService', () => {
     trustDevice: {
       update: jest.Mock;
       find: jest.Mock;
+      updateMany: jest.Mock;
     };
     $transaction: jest.Mock;
   };
@@ -88,6 +89,7 @@ describe('AuthService', () => {
       trustDevice: {
         update: jest.fn(),
         find: jest.fn(),
+        updateMany: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -272,7 +274,8 @@ describe('AuthService', () => {
       data: {
         userId: 'user-1',
         deviceId: credentials.deviceId,
-        refreshTokenHash: 'hash-refresh-token',
+        refreshSessionId: expect.any(String),
+        currentRefreshJti: expect.any(String),
         isAuthorized: true,
       },
     });
@@ -364,5 +367,80 @@ describe('AuthService', () => {
         deviceId: 'device-1',
       }),
     ).rejects.toBeInstanceOf(DeviceVerificationRequiredException);
+  });
+
+  describe('Test 1: Login session generation and persistence', () => {
+    it('issues new sid and jti and stores both together in trustDevice', async () => {
+      const user = {
+        id: 'user-uuid-1',
+        phone: '+8801712345678',
+        pin: 'hash-pin',
+        status: 'ACTIVE',
+        role: 'CUSTOMER',
+        trustDevices: [
+          {
+            deviceId: 'device-1',
+            isAuthorized: true,
+          },
+        ],
+      };
+
+      prismaServiceStub.user.findUnique.mockResolvedValueOnce(user);
+      passwordServiceStub.verify.mockResolvedValueOnce(true);
+      jwtServiceStub.signAsync
+        .mockResolvedValueOnce('mocked.access.token')
+        .mockResolvedValueOnce('mocked.refresh.token');
+
+      prismaServiceStub.trustDevice.updateMany.mockResolvedValueOnce({
+        count: 1,
+      });
+
+      const response = await service.login({
+        phone: '+8801712345678',
+        pin: '1111',
+        deviceId: 'device-1',
+      });
+
+      expect(response).toEqual({
+        accessToken: 'mocked.access.token',
+        refreshToken: 'mocked.refresh.token',
+      });
+
+      // Verify updateMany was called with both refreshSessionId (sid) and currentRefreshJti (jti) together
+      expect(prismaServiceStub.trustDevice.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: user.id,
+          deviceId: 'device-1',
+          isAuthorized: true,
+          user: { is: { status: 'ACTIVE' } },
+        },
+        data: {
+          refreshSessionId: expect.any(String),
+          currentRefreshJti: expect.any(String),
+          lastUsedAt: expect.any(Date),
+        },
+      });
+
+      const updateCallArgs =
+        prismaServiceStub.trustDevice.updateMany.mock.calls[0][0];
+      const storedSid = updateCallArgs.data.refreshSessionId;
+      const storedJti = updateCallArgs.data.currentRefreshJti;
+
+      expect(typeof storedSid).toBe('string');
+      expect(typeof storedJti).toBe('string');
+      expect(storedSid.length).toBeGreaterThan(0);
+      expect(storedJti.length).toBeGreaterThan(0);
+
+      // Verify signAsync for the refresh token was given the exact same sid and jti
+      expect(jwtServiceStub.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: user.id,
+          deviceId: 'device-1',
+          sid: storedSid,
+          jti: storedJti,
+        }),
+        expect.any(Object),
+      );
+    });
   });
 });

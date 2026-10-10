@@ -38,6 +38,8 @@ describe('AuthModule compositon', () => {
               LOGIN_MAX_FAILURES: 5,
               LOGIN_FAILURE_WINDOW_SECONDS: 900,
               LOGIN_THROTTLE_SECONDS: 60,
+              REGISTRATION_AUTHORIZATION_TTL_SECONDS: 300,
+              DEVICE_ENROLLMENT_AUTHORIZATION_TTL_SECONDS: 300,
             }),
           ],
         }),
