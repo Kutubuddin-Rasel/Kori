@@ -263,14 +263,15 @@ export class OtpService {
         where: { userId_deviceId: { userId: existingUser.id, deviceId } },
         update: {
           isAuthorized: true,
-          refreshTokenHash: null,
+          refreshSessionId: null,
           lastUsedAt: new Date(),
         },
         create: {
           userId: existingUser.id,
           deviceId,
           isAuthorized: true,
-          refreshTokenHash: null,
+          refreshSessionId: null,
+          currentRefreshJti: null,
         },
       });
       return {
