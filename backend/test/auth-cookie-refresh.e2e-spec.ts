@@ -225,4 +225,70 @@ describe('Auth Cookie & Refresh Flow (e2e)', () => {
     expect(deviceAfter?.refreshSessionId).toBe(expectedSid);
     expect(deviceAfter?.isAuthorized).toBe(true);
   });
+
+  it('revokes the session and clears database state when an old rotated refresh cookie is replayed', async () => {
+    // 1. Fresh login to establish an isolated session and obtain cookieA
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: testPhone,
+        pin: testPin,
+        deviceId: testDeviceId,
+      })
+      .expect(200);
+
+    const loginCookies = loginRes.headers['set-cookie'] as unknown as
+      | string[]
+      | undefined;
+    const cookieAHeader = loginCookies?.find((c) =>
+      c.startsWith('refresh_token='),
+    );
+    expect(cookieAHeader).toBeDefined();
+    const cookieAMatch = cookieAHeader?.match(/^refresh_token=[^;]+/);
+    const cookieA = cookieAMatch ? cookieAMatch[0] : '';
+    expect(cookieA).toBeTruthy();
+
+    // 2. Legitimate rotation: Refresh with cookieA to receive cookieB
+    const firstRefreshRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieA)
+      .expect(200);
+
+    expect(firstRefreshRes.body).toHaveProperty('accessToken');
+
+    const firstRefreshCookies = firstRefreshRes.headers[
+      'set-cookie'
+    ] as unknown as string[] | undefined;
+    const cookieBHeader = firstRefreshCookies?.find((c) =>
+      c.startsWith('refresh_token='),
+    );
+    expect(cookieBHeader).toBeDefined();
+    const cookieBMatch = cookieBHeader?.match(/^refresh_token=[^;]+/);
+    const cookieB = cookieBMatch ? cookieBMatch[0] : '';
+    expect(cookieB).toBeTruthy();
+    expect(cookieB).not.toBe(cookieA);
+
+    // 3. Replay attack: Refresh with the already rotated cookieA again
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieA)
+      .expect(401);
+
+    // 4. Verify PostgreSQL state: session revoked (refreshSessionId and currentRefreshJti cleared)
+    const deviceInDb = await prisma.trustDevice.findUnique({
+      where: {
+        userId_deviceId: { userId: testUserId, deviceId: testDeviceId },
+      },
+    });
+
+    expect(deviceInDb).toBeDefined();
+    expect(deviceInDb?.refreshSessionId).toBeNull();
+    expect(deviceInDb?.currentRefreshJti).toBeNull();
+
+    // 5. Verify cookieB is also now revoked (strict replay invalidation)
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieB)
+      .expect(401);
+  });
 });
