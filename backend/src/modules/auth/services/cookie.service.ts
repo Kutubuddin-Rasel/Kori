@@ -12,7 +12,7 @@ import { AuthCookie } from 'src/modules/auth/interfaces/jwt.interface';
 export class CookieService {
   private readonly isProduction: boolean;
   private logger = new Logger(CookieService.name);
-  private readonly refreshCookiePath = 'api/v1/auth';
+  private readonly refreshCookiePath = '/api/v1/auth';
   private secure: boolean;
   private sameSite: 'strict' | 'lax' | 'none';
 
