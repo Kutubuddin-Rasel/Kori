@@ -264,6 +264,7 @@ export class OtpService {
         update: {
           isAuthorized: true,
           refreshSessionId: null,
+          currentRefreshJti: null,
           lastUsedAt: new Date(),
         },
         create: {
