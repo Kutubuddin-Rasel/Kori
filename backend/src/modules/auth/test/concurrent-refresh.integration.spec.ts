@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../auth.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { AppModule } from 'src/app.module';
@@ -87,17 +86,9 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
       (r) => r.status === 'rejected',
     );
 
-    // CRITICAL ATOMICITY GUARANTEE:
-    // Under PostgreSQL row-level locks, it is IMPOSSIBLE for both concurrent rotations to succeed
-    expect(fulfilledResults.length).toBeLessThanOrEqual(1);
-
-    // At least one request MUST be rejected
-    expect(rejectedResults.length).toBeGreaterThanOrEqual(1);
-
-    for (const rejected of rejectedResults) {
-      const error = (rejected as PromiseRejectedResult).reason;
-      expect(error).toBeInstanceOf(UnauthorizedException);
-    }
+    // ATOMICITY GUARANTEE:
+    expect(fulfilledResults).toHaveLength(1);
+    expect(rejectedResults).toHaveLength(1);
 
     // Check resulting database state
     const deviceState = await prisma.trustDevice.findUnique({
@@ -115,5 +106,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     // Or if request 1 succeeded and request 2 completed, either currentRefreshJti was updated or revoked.
     // In NO case does currentRefreshJti remain initialJti!
     expect(deviceState?.currentRefreshJti).not.toBe(initialJti);
+    expect(deviceState?.refreshSessionId).toBeNull();
+    expect(deviceState?.currentRefreshJti).toBeNull();
   });
 });
