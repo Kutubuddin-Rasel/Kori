@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsPhoneNumber, IsString, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsPhoneNumber,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class AuthCredentialsDto {
   @IsNotEmpty()
@@ -14,5 +20,9 @@ export class AuthCredentialsDto {
 
   @IsNotEmpty()
   @IsString()
+  @MaxLength(128)
+  @Matches(/\S/, {
+    message: 'Device ID must contain a non-whitespace character',
+  })
   deviceId: string = '';
 }

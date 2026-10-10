@@ -26,7 +26,6 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
-
   constructor(
     private readonly walletsService: WalletsService,
     private readonly configService: ConfigService,
@@ -304,7 +303,7 @@ export class AuthService {
 
     if (!user || user.status !== AccountStatus.ACTIVE) {
       throw new UnauthorizedException({
-        code: 'SESSION_INAVLID',
+        code: 'SESSION_INVALID',
         message: 'Your session is no longer valid. Please sign in again.',
       });
     }
@@ -352,20 +351,23 @@ export class AuthService {
       },
     });
 
-    if (
-      device?.isAuthorized &&
+    const isReplayWithinCurrentSession =
+      device?.isAuthorized === true &&
       device.refreshSessionId === payload.sid &&
-      device.currentRefreshJti !== null
-    ) {
+      device.currentRefreshJti !== null &&
+      device.currentRefreshJti !== payload.jti;
+
+    if (isReplayWithinCurrentSession) {
       await this.prisma.trustDevice.updateMany({
         where: {
           userId: payload.sub,
           deviceId: payload.deviceId,
           refreshSessionId: payload.sid,
           isAuthorized: true,
-          currentRefreshJti: {
-            not: null,
-          },
+          AND: [
+            { currentRefreshJti: { not: null } },
+            { currentRefreshJti: { not: payload.jti } },
+          ],
         },
         data: {
           refreshSessionId: null,
