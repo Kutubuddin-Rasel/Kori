@@ -409,6 +409,7 @@ export class AuthService {
           deviceId,
           sid,
           jti,
+          tokenUse: 'refresh',
         },
         {
           secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
