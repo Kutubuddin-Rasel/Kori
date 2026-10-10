@@ -3,6 +3,7 @@ import { OtpService } from '../services/otp.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
+import { AuthProofService } from '../services/auth-proof.service';
 import { Logger } from '@nestjs/common';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
 
@@ -54,6 +55,12 @@ describe('OTP service', () => {
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: AuthProofService,
+          useValue: {
+            issueRegistrationAuthorization: jest.fn(),
+          },
         },
       ],
     }).compile();
