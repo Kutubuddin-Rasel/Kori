@@ -4,6 +4,13 @@
  * The infustructure mapper translates between Domain enums and Prisma enums.
  */
 
+export enum Role {
+  CUSTOMER = 'CUSTOMER',
+  AGENT = 'AGENT',
+  MERCHANT = 'MERCHANT',
+  ADMIN = 'ADMIN',
+}
+
 export enum AccountStatus {
   ACTIVE = 'ACTIVE',
   LOCKED = 'LOCKED',

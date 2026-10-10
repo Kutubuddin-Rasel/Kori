@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role } from 'generated/prisma/enums';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { RefreshTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
+import { AccessTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -31,7 +31,7 @@ export class RolesGuard implements CanActivate {
     // This assumes that a previous guard (like JwtAuthGuard) has already validated the JWT and attached the user info to the request.
     const { user } = context
       .switchToHttp()
-      .getRequest<{ user: RefreshTokenPayload }>();
+      .getRequest<{ user: AccessTokenPayload }>();
 
     if (!user) {
       throw new ForbiddenException(
