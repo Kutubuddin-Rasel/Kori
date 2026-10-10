@@ -15,7 +15,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
    * RFC 4122 Section 4.4 (UUID Version 4) Validator
    * Matches: 8 hex - 4 hex - 4 hex (starts with 4) - 4 hex (starts with 8, 9, a, or b) - 12 hex
    */
-  private UUID_V4_REGEX =
+  private readonly UUID_V4_REGEX =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   constructor(configService: ConfigService, cookieService: CookieService) {
