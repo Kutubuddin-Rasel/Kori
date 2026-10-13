@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role } from 'generated/prisma/enums';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { AccessTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
+import { CurrentAccountRequest } from '../interfaces/active-account.interface';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -27,20 +27,16 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    // Get the user information from the request context
-    // This assumes that a previous guard (like JwtAuthGuard) has already validated the JWT and attached the user info to the request.
-    const { user } = context
-      .switchToHttp()
-      .getRequest<{ user: AccessTokenPayload }>();
+    const request = context.switchToHttp().getRequest<CurrentAccountRequest>();
 
-    if (!user) {
-      throw new ForbiddenException(
-        'User context is missing, Ensure JwtAuthGuard is appplied first.',
-      );
+    const currentUser = request.currentAccount;
+
+    if (!currentUser) {
+      throw new ForbiddenException('Current account authorization is missing.');
     }
 
     // Check if the user's role is included in the required roles for the route.
-    const hasRole = requiredRoles.includes(user.role);
+    const hasRole = requiredRoles.includes(currentUser.role);
 
     if (!hasRole) {
       throw new ForbiddenException(
