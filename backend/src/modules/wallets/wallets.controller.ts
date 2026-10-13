@@ -23,6 +23,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
+import { ActiveAccountGuard } from '../auth/guards/active-account.guard';
 
 /**
  * WalletsController manages all wallet-related endpoints, including retrieving wallet balances,
@@ -32,7 +33,7 @@ import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
  * certain endpoints are restricted to admin users using the RolesGuard and Roles decorator.
  */
 @Controller('wallets')
-@UseGuards(AccessTokenGuard)
+@UseGuards(AccessTokenGuard, ActiveAccountGuard)
 export class WalletsController {
   constructor(private readonly walletsService: WalletsService) {}
 
