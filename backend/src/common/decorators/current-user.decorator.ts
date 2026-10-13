@@ -16,7 +16,7 @@ type PrincipalField = keyof AccessTokenPayload | keyof RefreshTokenPayload;
  * Interface representing an HTTP request that has been authenticated,
  * containing the user's principal information.
  */
-interface AuthenticatedRequest {
+export interface AuthenticatedRequest {
   user?: AuthenticatedPrincipal;
 }
 
