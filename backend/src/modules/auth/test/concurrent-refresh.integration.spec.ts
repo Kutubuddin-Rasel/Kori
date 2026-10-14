@@ -186,4 +186,58 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
       refreshToken: expect.any(String),
     });
   });
+
+  it('does not revoke S2 using an old S1 logout', async () => {
+    const sid1 = randomUUID();
+    const jti1 = randomUUID();
+
+    const sid2 = randomUUID();
+    const jti2 = randomUUID();
+
+    // 1. Seed active session in PostgreSQL
+    await prisma.trustDevice.deleteMany({ where: { userId: testUserId } });
+    await prisma.trustDevice.create({
+      data: {
+        userId: testUserId,
+        deviceId: testDeviceId,
+        isAuthorized: true,
+        refreshSessionId: sid1,
+        currentRefreshJti: jti1,
+      },
+    });
+
+    await prisma.trustDevice.update({
+      where: {
+        userId_deviceId: {
+          userId: testUserId,
+          deviceId: testDeviceId,
+        },
+      },
+      data: {
+        refreshSessionId: sid2,
+        currentRefreshJti: jti2,
+        isAuthorized: true,
+      },
+    });
+
+    await authService.logoutCurrentSession({
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid: sid1,
+      jti: jti1,
+      tokenUse: 'refresh',
+    });
+
+    const device = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: {
+          userId: testUserId,
+          deviceId: testDeviceId,
+        },
+      },
+    });
+
+    expect(device.refreshSessionId).toBe(sid2);
+    expect(device.currentRefreshJti).toBe(jti2);
+  });
 });

@@ -334,9 +334,7 @@ export class AuthService {
     await this.logoutCurrentSession(claims);
   }
 
-  private async logoutCurrentSession(
-    payload: RefreshTokenPayload,
-  ): Promise<void> {
+  async logoutCurrentSession(payload: RefreshTokenPayload): Promise<void> {
     try {
       await this.prisma.trustDevice.updateMany({
         where: {
