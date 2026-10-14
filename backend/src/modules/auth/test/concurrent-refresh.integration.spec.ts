@@ -240,4 +240,104 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(device.refreshSessionId).toBe(sid2);
     expect(device.currentRefreshJti).toBe(jti2);
   });
+
+  it('Logout terminates only the matching session family', async () => {
+    const sid1 = randomUUID();
+    const jti1 = randomUUID();
+
+    const sid2 = randomUUID();
+    const jti2 = randomUUID();
+    const testDeviceId2 = 'second-test-device-uuid';
+
+    await prisma.trustDevice.deleteMany({ where: { userId: testUserId } });
+    await prisma.trustDevice.create({
+      data: {
+        userId: testUserId,
+        deviceId: testDeviceId,
+        isAuthorized: true,
+        refreshSessionId: sid1,
+        currentRefreshJti: jti1,
+      },
+    });
+
+    await prisma.trustDevice.create({
+      data: {
+        userId: testUserId,
+        deviceId: testDeviceId2,
+        isAuthorized: true,
+        refreshSessionId: sid2,
+        currentRefreshJti: jti2,
+      },
+    });
+
+    await authService.logoutCurrentSession({
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid: sid1,
+      jti: jti2,
+      tokenUse: 'refresh',
+    });
+
+    const deviceA = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: { userId: testUserId, deviceId: testDeviceId },
+      },
+    });
+
+    const deviceB = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: { userId: testUserId, deviceId: testDeviceId2 },
+      },
+    });
+
+    expect(deviceA.refreshSessionId).toBe(null);
+    expect(deviceA.currentRefreshJti).toBe(null);
+    expect(deviceA.isAuthorized).toBe(true);
+
+    expect(deviceB.refreshSessionId).toBe(sid2);
+    expect(deviceB.currentRefreshJti).toBe(jti2);
+    expect(deviceB.isAuthorized).toBe(true);
+  });
+
+  it('Repeat logout safely', async () => {
+    const sid = randomUUID();
+    const jti = randomUUID();
+
+    await prisma.trustDevice.deleteMany({ where: { userId: testUserId } });
+    await prisma.trustDevice.create({
+      data: {
+        userId: testUserId,
+        deviceId: testDeviceId,
+        refreshSessionId: sid,
+        currentRefreshJti: jti,
+        isAuthorized: true,
+      },
+    });
+
+    await authService.logoutCurrentSession({
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid,
+      jti,
+      tokenUse: 'refresh',
+    });
+
+    const resultA = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: { userId: testUserId, deviceId: testDeviceId },
+      },
+    });
+
+    expect(resultA.refreshSessionId).toBe(null);
+    expect(resultA.currentRefreshJti).toBe(null);
+
+    const resultB = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: { userId: testUserId, deviceId: testDeviceId },
+      },
+    });
+
+    expect(resultB.refreshSessionId).toBe(null);
+    expect(resultB.currentRefreshJti).toBe(null);
+  });
 });
