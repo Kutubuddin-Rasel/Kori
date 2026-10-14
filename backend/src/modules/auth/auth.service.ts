@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -23,9 +25,13 @@ import { RegisterDto } from './dto/register.dto';
 import { AuthProofService } from './services/auth-proof.service';
 import { DeviceVerificationRequiredException } from './exceptions/device-verification-required.exception';
 import { randomUUID } from 'crypto';
+import { parseRefreshTokenClaims } from './utils/parse-refresh-token-claims';
+import { TrustedDeviceResponse } from './interfaces/trusted-device-response.interface';
+import { UserId } from 'src/domain/value-objects/user-id.vo';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly walletsService: WalletsService,
     private readonly configService: ConfigService,
@@ -295,32 +301,60 @@ export class AuthService {
     };
   }
 
-  async logoutCurrentSession(payload: RefreshTokenPayload): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
-
-    if (!user || user.status !== AccountStatus.ACTIVE) {
-      throw new UnauthorizedException({
-        code: 'SESSION_INVALID',
-        message: 'Your session is no longer valid. Please sign in again.',
-      });
+  async logoutUsingRefreshCookie(rawToken: string | null): Promise<void> {
+    if (!rawToken) {
+      return;
     }
 
-    const result = await this.prisma.trustDevice.updateMany({
-      where: {
-        userId: payload.sub,
-        deviceId: payload.deviceId,
-        refreshSessionId: payload.sid,
-      },
-      data: {
-        refreshSessionId: null,
-        currentRefreshJti: null,
-      },
-    });
+    let payload: Record<string, unknown>;
 
-    if (result.count === 1) {
+    try {
+      payload = await this.jwtService.verifyAsync(rawToken, {
+        secret: this.configService.getOrThrow<string>('REFRESH_TOKEN_SECRET'),
+        algorithms: ['HS256'],
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(
+          error.name,
+        )
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+
+    const claims = parseRefreshTokenClaims(payload);
+    if (!claims) {
       return;
+    }
+
+    await this.logoutCurrentSession(claims);
+  }
+
+  private async logoutCurrentSession(
+    payload: RefreshTokenPayload,
+  ): Promise<void> {
+    try {
+      await this.prisma.trustDevice.updateMany({
+        where: {
+          userId: payload.sub,
+          deviceId: payload.deviceId,
+          refreshSessionId: payload.sid,
+        },
+        data: {
+          refreshSessionId: null,
+          currentRefreshJti: null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed in session-ending operation.',
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException('Failed to logout.');
     }
   }
 
@@ -454,5 +488,60 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  async listTrustedDevice(userId: UserId): Promise<TrustedDeviceResponse[]> {
+    const devices = await this.prisma.trustDevice.findMany({
+      where: { userId: userId.value },
+      omit: { userId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (devices.length === 0) {
+      this.logger.warn(
+        `No device found for userId:${userId.value}`,
+        this.listTrustedDevice.name,
+      );
+
+      throw new NotFoundException({
+        code: 'DEVICES_NOT_FOUND',
+        message: 'Device not found.',
+      });
+    }
+
+    const trustDevices: TrustedDeviceResponse[] = devices.map((device) => ({
+      id: device.id,
+      deviceId: device.deviceId,
+      isAuthorized: device.isAuthorized,
+      hasActiveSession:
+        device.isAuthorized &&
+        device.currentRefreshJti !== null &&
+        device.refreshSessionId !== null,
+      createdAt: device.createdAt,
+      lastUsedAt: device.lastUsedAt,
+    }));
+
+    return trustDevices;
+  }
+
+  async revokeTrustedDevice(
+    userId: UserId,
+    deviceRecordId: string,
+  ): Promise<void> {
+    const result = await this.prisma.trustDevice.updateMany({
+      where: { id: deviceRecordId, userId: userId.value },
+      data: {
+        isAuthorized: false,
+        currentRefreshJti: null,
+        refreshSessionId: null,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException({
+        code: 'DEVICE_NOT_FOUND',
+        message: 'Device not found.',
+      });
+    }
   }
 }
