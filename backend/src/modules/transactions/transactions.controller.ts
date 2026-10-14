@@ -16,6 +16,7 @@ import { CashInDto } from './dto/cash-in.dto';
 import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
+import { ActiveAccountGuard } from '../auth/guards/active-account.guard';
 
 /**
  * TransactionsController handles all transaction-related endpoints, including sending money,
@@ -26,7 +27,7 @@ import { UserId } from 'src/domain/value-objects/user-id.vo';
  * idempotency key are handled gracefully.
  */
 @Controller('transactions')
-@UseGuards(AccessTokenGuard)
+@UseGuards(AccessTokenGuard, ActiveAccountGuard)
 @UseInterceptors(IdempotencyInterceptor)
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
