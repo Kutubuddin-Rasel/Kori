@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -14,12 +18,17 @@ import { SendOtpResponse, VerifyOtpResponse } from './interfaces/otp.interface';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { AuthCredentialsDto } from './dto/auth-credentials.dto';
 import { CookieService } from './services/cookie.service';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import type { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { OtpService } from './services/otp.service';
 import { RegisterDto } from './dto/register.dto';
+import { AccessTokenGuard } from './guards/access-token.guard';
+import { ActiveAccountGuard } from './guards/active-account.guard';
+import { TrustedDeviceResponse } from './interfaces/trusted-device-response.interface';
+import { UserId } from 'src/domain/value-objects/user-id.vo';
+import { DeviceIdParam } from './dto/device-id-param.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -86,13 +95,34 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(RefreshTokenGuard)
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
-    @CurrentUser() user: RefreshTokenPayload,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    await this.authService.logoutCurrentSession(user);
+    const rawToken = this.cookieService.extractRefreshCookie(req);
+    await this.authService.logoutUsingRefreshCookie(rawToken);
     this.cookieService.clearAuthCookies(res);
+  }
+
+  @Get('devices')
+  @UseGuards(AccessTokenGuard, ActiveAccountGuard)
+  @HttpCode(HttpStatus.OK)
+  async getMyDevices(
+    @CurrentUser('sub') rawUserId: string,
+  ): Promise<TrustedDeviceResponse[]> {
+    const userId = UserId.from(rawUserId);
+    return this.authService.listTrustedDevice(userId);
+  }
+
+  @Delete('devices/:deviceRecordId')
+  @UseGuards(AccessTokenGuard, ActiveAccountGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeDevice(
+    @CurrentUser('sub') rawUserId: string,
+    @Param() params: DeviceIdParam,
+  ): Promise<void> {
+    const userId = UserId.from(rawUserId);
+    await this.authService.revokeTrustedDevice(userId, params.deviceRecordId);
   }
 }
