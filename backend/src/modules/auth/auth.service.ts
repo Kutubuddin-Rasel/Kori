@@ -295,6 +295,35 @@ export class AuthService {
     };
   }
 
+  async logoutCurrentSession(payload: RefreshTokenPayload): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user || user.status !== AccountStatus.ACTIVE) {
+      throw new UnauthorizedException({
+        code: 'SESSION_INVALID',
+        message: 'Your session is no longer valid. Please sign in again.',
+      });
+    }
+
+    const result = await this.prisma.trustDevice.updateMany({
+      where: {
+        userId: payload.sub,
+        deviceId: payload.deviceId,
+        refreshSessionId: payload.sid,
+      },
+      data: {
+        refreshSessionId: null,
+        currentRefreshJti: null,
+      },
+    });
+
+    if (result.count === 1) {
+      return;
+    }
+  }
+
   // Reissues new tokens when the access token expires, provided a valid refresh token
   async refreshTokens(payload: RefreshTokenPayload): Promise<TokensResponse> {
     const user = await this.prisma.user.findUnique({

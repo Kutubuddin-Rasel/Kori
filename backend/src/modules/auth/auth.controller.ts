@@ -84,4 +84,15 @@ export class AuthController {
     this.cookieService.setRefreshCookies(res, refreshToken);
     return { accessToken };
   }
+
+  @Post('logout')
+  @UseGuards(RefreshTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @CurrentUser() user: RefreshTokenPayload,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    await this.authService.logoutCurrentSession(user);
+    this.cookieService.clearAuthCookies(res);
+  }
 }
