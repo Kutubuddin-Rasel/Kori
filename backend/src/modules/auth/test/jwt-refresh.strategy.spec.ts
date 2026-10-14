@@ -50,7 +50,7 @@ describe('JwtRefreshStrategy', () => {
         UnauthorizedException,
       );
       expect(() => strategy.validate(payloadWithoutJti)).toThrow(
-        'Malformed token cryptographic identifiers',
+        'Invalid refresh token.',
       );
     });
 
@@ -61,7 +61,7 @@ describe('JwtRefreshStrategy', () => {
         UnauthorizedException,
       );
       expect(() => strategy.validate(payloadEmptyJti)).toThrow(
-        'Malformed token cryptographic identifiers',
+        'Invalid refresh token.',
       );
     });
 
@@ -72,7 +72,7 @@ describe('JwtRefreshStrategy', () => {
         UnauthorizedException,
       );
       expect(() => strategy.validate(payloadInvalidJti)).toThrow(
-        'Malformed token cryptographic identifiers',
+        'Invalid refresh token.',
       );
     });
   });
@@ -88,23 +88,23 @@ describe('JwtRefreshStrategy', () => {
     it('throws UnauthorizedException when tokenUse is not refresh', () => {
       expect(() =>
         strategy.validate({ ...validPayload, tokenUse: 'access' }),
-      ).toThrow('Invalid token purpose');
+      ).toThrow('Invalid refresh token.');
     });
 
     it('throws UnauthorizedException when deviceId is missing or empty', () => {
       expect(() =>
         strategy.validate({ ...validPayload, deviceId: '' }),
-      ).toThrow('Invalid device identifier in token');
+      ).toThrow('Invalid refresh token.');
     });
 
     it('throws UnauthorizedException when sub or sid are not valid UUID v4', () => {
       expect(() =>
         strategy.validate({ ...validPayload, sub: 'invalid-sub' }),
-      ).toThrow('Malformed token cryptographic identifiers');
+      ).toThrow('Invalid refresh token.');
 
       expect(() =>
         strategy.validate({ ...validPayload, sid: 'invalid-sid' }),
-      ).toThrow('Malformed token cryptographic identifiers');
+      ).toThrow('Invalid refresh token.');
     });
   });
 });
