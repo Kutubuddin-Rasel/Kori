@@ -4,12 +4,13 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Role } from 'src/domain/enums';
 import { AccessTokenPayload } from 'src/modules/auth/interfaces/jwt.interface';
+import {
+  isNonEmptyString,
+  isUuidV4,
+} from '../utils/parse-refresh-token-claims';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  private readonly UUID_V4_REGEX =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
   private readonly ALLOWED_ROLES = new Set<string>(Object.values(Role));
 
   constructor(configService: ConfigService) {
@@ -22,27 +23,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  private isUuidV4(value: unknown): value is string {
-    return typeof value === 'string' && this.UUID_V4_REGEX.test(value);
-  }
-
-  private isNonEmptyString(value: unknown): value is string {
-    return typeof value === 'string' && value.trim().length > 0;
-  }
-
   private isRole(value: unknown): value is Role {
     return typeof value === 'string' && this.ALLOWED_ROLES.has(value);
   }
 
   // This method is called by Passport to validate the JWT payload
   validate(payload: unknown): AccessTokenPayload {
-    if (!payload || typeof payload !== 'object') {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       throw new UnauthorizedException('Invalid access token');
     }
 
     const value = payload as Record<string, unknown>;
 
-    if (!this.isNonEmptyString(value.sub) || !this.isUuidV4(value.sub)) {
+    if (!isNonEmptyString(value.sub) || !isUuidV4(value.sub)) {
       throw new UnauthorizedException(
         'Malformed token cryptographic identifiers',
       );
