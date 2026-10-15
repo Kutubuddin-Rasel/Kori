@@ -9,10 +9,11 @@ import { RedisModule } from 'src/infrastructure/redis/redis.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
 import { configureApp } from 'src/app.setup';
 import request from 'supertest';
+import { App } from 'supertest/types';
 import { randomInt, randomUUID } from 'crypto';
 
 describe('Auth lifecycle (E2E)', () => {
-  let app: INestApplication;
+  let app: INestApplication<App>;
   let prisma: PrismaService;
   let redis: RedisService;
 
@@ -175,13 +176,15 @@ describe('Auth lifecycle (E2E)', () => {
   function refreshCookieFrom(response: {
     headers: Record<string, unknown>;
   }): string {
-    const setCookie = response.headers['set-cookie'] as string[] | undefined;
+    const rawSetCookie = response.headers['set-cookie'];
 
-    if (!Array.isArray(setCookie)) {
+    if (!Array.isArray(rawSetCookie)) {
       throw new Error('No Set-Cookie response header');
     }
 
-    const header = setCookie.find((value: string) =>
+    const setCookie = rawSetCookie as string[];
+
+    const header = setCookie.find((value) =>
       value.startsWith('refresh_token='),
     );
 
@@ -509,5 +512,357 @@ describe('Auth lifecycle (E2E)', () => {
         deviceId: user.deviceId,
       })
       .expect(429);
+  });
+
+  it('rejects wrong OTP over HTTP and never issues registration authority', async () => {
+    const phone = newPhone();
+    const deviceId = newDeviceId();
+
+    const challenge = await issueTestOtp(phone, deviceId);
+    const wrongOtp = challenge.otp === '123456' ? '654321' : '123456';
+
+    const failedVerification = await request(app.getHttpServer())
+      .post('/api/v1/auth/verify-otp')
+      .send({
+        phone,
+        deviceId,
+        challengeId: challenge.challengeId,
+        otp: wrongOtp,
+      })
+      .expect(400);
+
+    expect(failedVerification.body.message).toBe('Invalid OTP');
+    expect(failedVerification.body.registrationAuthorization).toBeUndefined();
+
+    // Ensure no registration can be completed with a forged token
+    const failedRegistration = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        phone,
+        deviceId,
+        pin: '1234',
+        registrationToken: randomUUID().repeat(2),
+      })
+      .expect(401);
+
+    expect(failedRegistration.body.code).toBe(
+      'REGISTRATION_AUTHORIZATION_INVALID',
+    );
+
+    const userCount = await prisma.user.count({ where: { phone } });
+    expect(userCount).toBe(0);
+  });
+
+  it('prevents using a valid registration proof on a different device', async () => {
+    const phone = newPhone();
+    const deviceA = newDeviceId();
+    const deviceB = newDeviceId();
+
+    const challenge = await issueTestOtp(phone, deviceA);
+
+    const verified = await request(app.getHttpServer())
+      .post('/api/v1/auth/verify-otp')
+      .send({
+        phone,
+        deviceId: deviceA,
+        challengeId: challenge.challengeId,
+        otp: challenge.otp,
+      })
+      .expect(200);
+
+    const registrationToken = verified.body.registrationAuthorization
+      ?.token as string;
+    expect(registrationToken).toEqual(expect.any(String));
+
+    // Attacker deviceB attempts to consume deviceA's registration token
+    const stolenAttempt = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        phone,
+        deviceId: deviceB,
+        pin: '1234',
+        registrationToken,
+      })
+      .expect(401);
+
+    expect(stolenAttempt.body.code).toBe('REGISTRATION_AUTHORIZATION_INVALID');
+
+    // User is not created in the database
+    expect(await prisma.user.count({ where: { phone } })).toBe(0);
+
+    // Legitimate deviceA can still register using its proof
+    const legitRegistration = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        phone,
+        deviceId: deviceA,
+        pin: '1234',
+        registrationToken,
+      })
+      .expect(201);
+
+    expect(legitRegistration.body.accessToken).toEqual(expect.any(String));
+
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { phone },
+      include: { wallet: true },
+    });
+    ownedUserIds.push(user.id);
+  });
+
+  it('prevents authorizing a new device with SMS OTP alone without a PIN-derived enrollment token', async () => {
+    const user = await registerUserThroughHttp();
+
+    // Clear resend cooldown for user.phone
+    await redis.del(`auth:otp:{${user.phone}}:resend`);
+
+    const attackerDeviceId = newDeviceId();
+
+    // Attacker requests an OTP to the victim's phone
+    const challenge = await issueTestOtp(user.phone, attackerDeviceId);
+
+    // Attacker intercepts SMS OTP and attempts verify-otp without deviceEnrollmentToken
+    const attempt = await request(app.getHttpServer())
+      .post('/api/v1/auth/verify-otp')
+      .send({
+        phone: user.phone,
+        deviceId: attackerDeviceId,
+        challengeId: challenge.challengeId,
+        otp: challenge.otp,
+      })
+      .expect(403);
+
+    expect(attempt.body.code).toBe('DEVICE_ENROLLMENT_AUTHORIZATION_REQUIRED');
+
+    // Ensure attackerDeviceId was NOT added or authorized in trustDevice
+    const deviceRecord = await prisma.trustDevice.findUnique({
+      where: {
+        userId_deviceId: {
+          userId: user.userId,
+          deviceId: attackerDeviceId,
+        },
+      },
+    });
+    expect(deviceRecord).toBeNull();
+
+    // Attacker cannot login without completing device verification flow
+    const loginAttempt = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: attackerDeviceId,
+      })
+      .expect(403);
+
+    expect(loginAttempt.body.code).toBe('DEVICE_VERIFICATION_REQUIRED');
+  });
+
+  it('treats logout with missing or expired cookie as idempotent 204 with cookie clearance', async () => {
+    // 1. Missing cookie header
+    const missingCookieResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .expect(204);
+
+    const missingCookieHeaders = missingCookieResponse.headers[
+      'set-cookie'
+    ] as unknown as string[] | undefined;
+    expect(
+      missingCookieHeaders?.some(
+        (header) =>
+          header.startsWith('refresh_token=') &&
+          header.includes('Path=/api/v1/auth'),
+      ),
+    ).toBe(true);
+
+    // 2. Expired / malformed cookie header
+    const malformedCookieResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', 'refresh_token=malformed.expired.jwt.token')
+      .expect(204);
+
+    const malformedCookieHeaders = malformedCookieResponse.headers[
+      'set-cookie'
+    ] as unknown as string[] | undefined;
+    expect(
+      malformedCookieHeaders?.some(
+        (header) =>
+          header.startsWith('refresh_token=') &&
+          header.includes('Path=/api/v1/auth'),
+      ),
+    ).toBe(true);
+
+    // 3. Repeated logout on an authenticated user is completely safe and idempotent
+    const user = await registerUserThroughHttp();
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: user.deviceId,
+      })
+      .expect(200);
+
+    const validCookie = refreshCookieFrom(login);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', validCookie)
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', validCookie)
+      .expect(204);
+  });
+
+  it('ensures a delayed HTTP logout for an older session cannot revoke a newer database session', async () => {
+    const user = await registerUserThroughHttp();
+
+    // Session 1 login on trusted device
+    const loginS1 = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: user.deviceId,
+      })
+      .expect(200);
+
+    const cookieS1 = refreshCookieFrom(loginS1);
+
+    // Session 2 login on same trusted device supersedes S1 in database
+    const loginS2 = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: user.deviceId,
+      })
+      .expect(200);
+
+    const cookieS2 = refreshCookieFrom(loginS2);
+
+    const deviceStateBeforeDelayedLogout =
+      await prisma.trustDevice.findUniqueOrThrow({
+        where: {
+          userId_deviceId: { userId: user.userId, deviceId: user.deviceId },
+        },
+      });
+
+    const activeSessionId = deviceStateBeforeDelayedLogout.refreshSessionId;
+    const activeJti = deviceStateBeforeDelayedLogout.currentRefreshJti;
+    expect(activeSessionId).toBeTruthy();
+    expect(activeJti).toBeTruthy();
+
+    // Delayed logout with cookie from Session 1
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', cookieS1)
+      .expect(204);
+
+    // Verify Session 2 in database was not revoked or modified
+    const deviceStateAfterDelayedLogout =
+      await prisma.trustDevice.findUniqueOrThrow({
+        where: {
+          userId_deviceId: { userId: user.userId, deviceId: user.deviceId },
+        },
+      });
+
+    expect(deviceStateAfterDelayedLogout.refreshSessionId).toBe(
+      activeSessionId,
+    );
+    expect(deviceStateAfterDelayedLogout.currentRefreshJti).toBe(activeJti);
+
+    // Session 2 can still refresh successfully
+    const refreshedS2 = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieS2)
+      .expect(200);
+
+    expect(refreshedS2.body.accessToken).toEqual(expect.any(String));
+
+    // Session 1 is completely rejected
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieS1)
+      .expect(401);
+  });
+
+  it('guarantees that completed device revocation leaves no renewable session under concurrent refresh', async () => {
+    const user = await registerUserThroughHttp();
+
+    const device = await prisma.trustDevice.findUniqueOrThrow({
+      where: {
+        userId_deviceId: { userId: user.userId, deviceId: user.deviceId },
+      },
+    });
+
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: user.deviceId,
+      })
+      .expect(200);
+
+    const activeCookie = refreshCookieFrom(login);
+
+    // Concurrently trigger device revocation and token refresh
+    const [revokeResult, refreshResult] = await Promise.allSettled([
+      request(app.getHttpServer())
+        .delete(`/api/v1/auth/devices/${device.id}`)
+        .set('Authorization', `Bearer ${user.accessToken}`),
+      request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', activeCookie),
+    ]);
+
+    expect(revokeResult.status).toBe('fulfilled');
+    if (revokeResult.status === 'fulfilled') {
+      expect(revokeResult.value.status).toBe(204);
+    }
+
+    // Database state must be un-authorized with all session identifiers wiped
+    const postRevocationDevice = await prisma.trustDevice.findUniqueOrThrow({
+      where: { id: device.id },
+    });
+
+    expect(postRevocationDevice.isAuthorized).toBe(false);
+    expect(postRevocationDevice.refreshSessionId).toBeNull();
+    expect(postRevocationDevice.currentRefreshJti).toBeNull();
+
+    // Whichever refresh cookie was held or rotated can no longer renew
+    let cookieToTest = activeCookie;
+    if (
+      refreshResult.status === 'fulfilled' &&
+      refreshResult.value.status === 200
+    ) {
+      cookieToTest = refreshCookieFrom(refreshResult.value);
+    }
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', cookieToTest)
+      .expect(401);
+
+    // Initial cookie is also rejected
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', activeCookie)
+      .expect(401);
+
+    // PIN login alone is rejected because device is no longer trusted
+    const loginAttempt = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        phone: user.phone,
+        pin: user.pin,
+        deviceId: user.deviceId,
+      })
+      .expect(403);
+
+    expect(loginAttempt.body.code).toBe('DEVICE_VERIFICATION_REQUIRED');
   });
 });

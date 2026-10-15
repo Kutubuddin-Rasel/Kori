@@ -110,7 +110,8 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
       });
 
       const updatedJti =
-        prismaMock.trustDevice.updateMany.mock.calls[0][0].data.currentRefreshJti;
+        prismaMock.trustDevice.updateMany.mock.calls[0][0].data
+          .currentRefreshJti;
       expect(updatedJti).not.toEqual(basePayload.jti);
 
       // Verify tokens were signed with new JTI but preserved SID
@@ -145,7 +146,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
       prismaMock.trustDevice.findUnique.mockResolvedValueOnce({
         isAuthorized: true,
         refreshSessionId: basePayload.sid, // matches sid-1
-        currentRefreshJti: 'token-jti-B',  // does not match jti-A
+        currentRefreshJti: 'token-jti-B', // does not match jti-A
       });
 
       // 3. Replay revocation update
