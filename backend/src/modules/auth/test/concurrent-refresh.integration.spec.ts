@@ -331,6 +331,14 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(resultA.refreshSessionId).toBe(null);
     expect(resultA.currentRefreshJti).toBe(null);
 
+    await authService.logoutCurrentSession({
+      sub: testUserId,
+      deviceId: testDeviceId,
+      sid,
+      jti,
+      tokenUse: 'refresh',
+    });
+
     const resultB = await prisma.trustDevice.findUniqueOrThrow({
       where: {
         userId_deviceId: { userId: testUserId, deviceId: testDeviceId },

@@ -1,4 +1,3 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { RefreshTokenPayload } from '../interfaces/jwt.interface';
 
 /**
@@ -20,7 +19,7 @@ export function parseRefreshTokenClaims(
   payload: unknown,
 ): RefreshTokenPayload | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new UnauthorizedException('Invalid refresh token');
+    return null;
   }
 
   const value = payload as Record<string, unknown>;
