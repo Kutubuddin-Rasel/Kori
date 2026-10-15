@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { RedisService } from 'src/infrastructure/redis/redis.service';
@@ -16,10 +17,22 @@ describe('Auth lifecycle (E2E)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let redis: RedisService;
+  let jwtService: JwtService;
+  let configService: ConfigService;
 
   const ownedUserIds: string[] = [];
   const ownedPhones = new Set<string>();
   const challengeKeys = new Set<string>();
+
+  async function assertTestDatabase(prisma: PrismaService): Promise<void> {
+    const rows = await prisma.$queryRaw<
+      { name: string }[]
+    >`SELECT current_database() AS name`;
+
+    if (process.env.NODE_ENV !== 'test' || rows[0]?.name !== 'kori_test') {
+      throw new Error('Refusing integration tests outside kori_test.');
+    }
+  }
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -40,6 +53,10 @@ describe('Auth lifecycle (E2E)', () => {
 
     prisma = app.get(PrismaService);
     redis = app.get(RedisService);
+    jwtService = app.get(JwtService);
+    configService = app.get(ConfigService);
+
+    // await assertTestDatabase(prisma);
   });
 
   afterAll(async () => {
@@ -553,6 +570,59 @@ describe('Auth lifecycle (E2E)', () => {
     expect(userCount).toBe(0);
   });
 
+  it('rejects an expired OTP over HTTP even if the code was correct', async () => {
+    const phone = newPhone();
+    const deviceId = newDeviceId();
+
+    // 1. Issue a fresh test OTP challenge
+    const challenge = await issueTestOtp(phone, deviceId);
+    const challengeKey = `auth:otp:{${phone}}:challenge:${challenge.challengeId}`;
+
+    // 2. Shorten the challenge key's TTL in Redis so it expires
+    await redis.evalScript(
+      'return redis.call("PEXPIRE", KEYS[1], ARGV[1])',
+      [challengeKey],
+      ['50'],
+    );
+
+    // Wait for the key to expire in Redis
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(await redis.get(challengeKey)).toBeNull();
+
+    // 3. Submit the previously valid OTP through the actual /verify-otp endpoint
+    const expiredAttempt = await request(app.getHttpServer())
+      .post('/api/v1/auth/verify-otp')
+      .send({
+        phone,
+        deviceId,
+        challengeId: challenge.challengeId,
+        otp: challenge.otp,
+      })
+      .expect(400);
+
+    expect(expiredAttempt.body.message).toBe(
+      'OTP challenge is expired or superseded',
+    );
+    expect(expiredAttempt.body.registrationAuthorization).toBeUndefined();
+
+    // 4. Ensure no registration authority was issued or can be used
+    const failedRegistration = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        phone,
+        deviceId,
+        pin: '1234',
+        registrationToken: randomUUID().repeat(2),
+      })
+      .expect(401);
+
+    expect(failedRegistration.body.code).toBe(
+      'REGISTRATION_AUTHORIZATION_INVALID',
+    );
+
+    expect(await prisma.user.count({ where: { phone } })).toBe(0);
+  });
+
   it('prevents using a valid registration proof on a different device', async () => {
     const phone = newPhone();
     const deviceA = newDeviceId();
@@ -658,7 +728,7 @@ describe('Auth lifecycle (E2E)', () => {
     expect(loginAttempt.body.code).toBe('DEVICE_VERIFICATION_REQUIRED');
   });
 
-  it('treats logout with missing or expired cookie as idempotent 204 with cookie clearance', async () => {
+  it('treats logout with missing, malformed, or expired cookie as idempotent 204 with cookie clearance', async () => {
     // 1. Missing cookie header
     const missingCookieResponse = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
@@ -675,10 +745,46 @@ describe('Auth lifecycle (E2E)', () => {
       ),
     ).toBe(true);
 
-    // 2. Expired / malformed cookie header
+    // 2. Properly signed expired JWT cookie
+    const refreshSecret = configService.getOrThrow<string>(
+      'REFRESH_TOKEN_SECRET',
+    );
+    const expiredToken = jwtService.sign(
+      {
+        sub: '00000000-0000-0000-0000-000000000000',
+        role: 'CUSTOMER',
+        deviceId: 'device-expired-test',
+        sid: randomUUID(),
+        jti: randomUUID(),
+        tokenUse: 'refresh',
+      },
+      {
+        secret: refreshSecret,
+        expiresIn: '-10s',
+        algorithm: 'HS256',
+      },
+    );
+
+    const expiredCookieResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Cookie', `refresh_token=${expiredToken}`)
+      .expect(204);
+
+    const expiredCookieHeaders = expiredCookieResponse.headers[
+      'set-cookie'
+    ] as unknown as string[] | undefined;
+    expect(
+      expiredCookieHeaders?.some(
+        (header) =>
+          header.startsWith('refresh_token=') &&
+          header.includes('Path=/api/v1/auth'),
+      ),
+    ).toBe(true);
+
+    // 3. Malformed cookie header
     const malformedCookieResponse = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
-      .set('Cookie', 'refresh_token=malformed.expired.jwt.token')
+      .set('Cookie', 'refresh_token=malformed.invalid.jwt.token')
       .expect(204);
 
     const malformedCookieHeaders = malformedCookieResponse.headers[
@@ -692,7 +798,7 @@ describe('Auth lifecycle (E2E)', () => {
       ),
     ).toBe(true);
 
-    // 3. Repeated logout on an authenticated user is completely safe and idempotent
+    // 4. Repeated logout on an authenticated user is completely safe and idempotent
     const user = await registerUserThroughHttp();
     const login = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
