@@ -73,6 +73,7 @@ model User{
 
   wallet  Wallet?
   trustDevices  TrustDevice[]
+  businessApprovalsIssued BusinessApproval[] @relation("BusinessApprovalIssuer")
 
   @@map("users")
 }
@@ -181,4 +182,26 @@ model TrustDevice{
 
   @@unique([userId,deviceId])
   @@map("trusted_devices")
+}
+
+model BusinessApproval {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Dedicated account phone, normalized before storage.
+  phone String @unique
+
+  // Only AGENT or MERCHANT is allowed by the application.
+  role Role
+
+  // Staff member who made the offline approval decision.
+  approvedById String @db.Uuid
+  approvedBy User @relation( "BusinessApprovalIssuer", fields: [approvedById],references: [id],onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  // Null means approval has not been used.
+  activatedAt DateTime?
+
+  @@map("business_approvals")
 }
