@@ -1,12 +1,10 @@
 import {
-  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
-  Post,
   UseGuards,
 } from '@nestjs/common';
 import { WalletsService } from './wallets.service';
@@ -18,9 +16,8 @@ import {
 import { AccessTokenGuard } from '../auth/guards/access-token.guard';
 import { WalletIdParam } from './dto/wallet-id.param.dto';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/domain/enums';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { ActiveAccountGuard } from '../auth/guards/active-account.guard';
@@ -57,17 +54,6 @@ export class WalletsController {
   ): Promise<WalletOwnerResponse> {
     const walletId = WalletId.from(params.walletId);
     return this.walletsService.getWalletById(walletId);
-  }
-
-  // Endpoint for admin users to create a new system wallet
-  @Post('system')
-  @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
-  @HttpCode(HttpStatus.CREATED)
-  async createSystemWallet(
-    @Body() systemWalletDto: CreateSystemWalletDto,
-  ): Promise<WalletOwnerResponse> {
-    return this.walletsService.createSystemWallet(systemWalletDto);
   }
 
   // Endpoint for admin users to activate a wallet by wallet ID

@@ -1,4 +1,4 @@
-import { WalletType } from 'generated/prisma/enums';
+import { WalletType } from 'src/domain/enums';
 /**
  * This file defines the interfaces for wallet-related responses and states.
  * - `WalletBalanceResponse`: Represents the response structure for a wallet balance query, including the wallet's ID, balance, type, currency, and active status.

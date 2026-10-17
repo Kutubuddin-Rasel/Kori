@@ -5,7 +5,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
-import { WalletType } from 'generated/prisma/enums';
+import { WalletType } from 'src/domain/enums';
 
 export class CreateSystemWalletDto {
   @IsEnum(WalletType, {

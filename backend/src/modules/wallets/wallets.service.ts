@@ -12,16 +12,12 @@ import {
   WalletOwnerResponse,
   WalletStateForTransaction,
 } from './interfaces/wallet-interface';
-import { CreateSystemWalletDto } from './dto/create-system-wallet.dto';
-import {
-  DefaultArgs,
-  PrismaClientKnownRequestError,
-} from '@prisma/client/runtime/client';
-import { PrismaClient, Role } from 'generated/prisma/client';
-import { WalletType } from 'src/domain/enums';
+import { Prisma } from 'generated/prisma/client';
+import { Role, WalletType } from 'src/domain/enums';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
+import { WalletMapper } from 'src/infrastructure/prisma/mappers/wallet.mapper';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
@@ -40,12 +36,9 @@ export class WalletsService {
    * User-facing: Get the balance and status of the user's wallet
    */
   async getMyBalance(userId: UserId): Promise<WalletBalanceResponse> {
-    let wallet: WalletBalanceResponse | null;
-
-    // DB call
-    try {
-      // Get the wallet
-      wallet = await this.prisma.wallet.findUnique({
+    // Get the wallet
+    const wallet = await this.prisma.wallet
+      .findUnique({
         where: { userId: userId.value },
         select: {
           id: true,
@@ -54,14 +47,14 @@ export class WalletsService {
           isActive: true,
           currency: true,
         },
+      })
+      .catch((error) => {
+        this.logger.error(
+          'Failed to get wallet by user ID',
+          error instanceof Error ? error.stack : error,
+        );
+        throw new InternalServerErrorException('Failed to retrive wallet');
       });
-    } catch (error) {
-      this.logger.error(
-        'Failed to get wallet by user ID',
-        error instanceof Error ? error.stack : error,
-      );
-      throw new InternalServerErrorException('Failed to retrive wallet');
-    }
 
     // The wallet is not found in the database, throw a NotFoundException to inform the user that they do not have a wallet associated with their account.
     if (!wallet) {
@@ -77,7 +70,10 @@ export class WalletsService {
       );
     }
 
-    return wallet;
+    return {
+      ...wallet,
+      type: WalletMapper.toDomainType(wallet.type),
+    };
   }
 
   /**
@@ -85,14 +81,15 @@ export class WalletsService {
    * Accepts a Prisma Transaction Context to maintain cross-module ACID guarantees
    */
   async createPersonalWallet(
-    tx: Omit<
-      PrismaClient<never, undefined, DefaultArgs>,
-      '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
-    >,
+    tx: Prisma.TransactionClient,
     userId: string,
   ): Promise<void> {
     await tx.wallet.create({
-      data: { userId, type: WalletType.PERSONAL, balance: 0n },
+      data: {
+        userId,
+        type: WalletMapper.toPrismaType(WalletType.PERSONAL),
+        balance: 0n,
+      },
     });
   }
 
@@ -100,15 +97,14 @@ export class WalletsService {
     Admin-facing: Look up any wallet via it's own userId.
    */
   async getWalletById(walletId: WalletId): Promise<WalletOwnerResponse> {
-    let wallet: WalletOwnerResponse | null;
-
     /**
      * DB call to get the wallet
      * This method is used by admins to look up any wallet by its ID.
      * It returns detailed information about the wallet.
      */
-    try {
-      wallet = await this.prisma.wallet.findUnique({
+
+    const wallet = await this.prisma.wallet
+      .findUnique({
         where: { id: walletId.value },
         select: {
           id: true,
@@ -119,14 +115,14 @@ export class WalletsService {
           createdAT: true,
           userId: true,
         },
+      })
+      .catch((error) => {
+        this.logger.error(
+          'Failed to get wallet by ID',
+          error instanceof Error ? error.stack : error,
+        );
+        throw new InternalServerErrorException('Failed to retrive wallet');
       });
-    } catch (error) {
-      this.logger.error(
-        'Failed to get wallet by ID',
-        error instanceof Error ? error.stack : error,
-      );
-      throw new InternalServerErrorException('Failed to retrive wallet');
-    }
 
     // The wallet is not found in the database, throw a NotFoundException to inform the admin that the wallet with the specified ID does not exist.
     if (!wallet) {
@@ -134,50 +130,10 @@ export class WalletsService {
         `Wallet with ID:${walletId.toString()} does not exist.`,
       );
     }
-    return wallet;
-  }
-
-  /**
-   * Admin-only: Create a System or Marchent wallet.
-   * These wallets have no userID.
-   */
-  async createSystemWallet(
-    SystemWalletDto: CreateSystemWalletDto,
-  ): Promise<WalletOwnerResponse> {
-    try {
-      const wallet = await this.prisma.wallet.create({
-        data: {
-          type: SystemWalletDto.type,
-          currency: SystemWalletDto.currency,
-        },
-        select: {
-          id: true,
-          balance: true,
-          type: true,
-          isActive: true,
-          currency: true,
-          createdAT: true,
-          userId: true,
-        },
-      });
-
-      this.logger.log(`${SystemWalletDto.type} is created : id: ${wallet.id}`);
-
-      return wallet;
-    } catch (error) {
-      /**
-       * Prisma error code P2002 is a unique constraint violation, which in this context likely means an attempt to create a duplicate system wallet of the same type and currency.
-       */
-      if (
-        error instanceof PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException(
-          'A wallet with this instance already exists.',
-        );
-      }
-      throw error;
-    }
+    return {
+      ...wallet,
+      type: WalletMapper.toDomainType(wallet.type),
+    };
   }
 
   /*
@@ -216,7 +172,10 @@ export class WalletsService {
         },
       });
 
-      return wallet;
+      return {
+        ...wallet,
+        type: WalletMapper.toDomainType(wallet.type),
+      };
     } catch (error) {
       this.logger.error(
         'Failed to update wallet status',
@@ -265,7 +224,10 @@ export class WalletsService {
         },
       });
 
-      return wallet;
+      return {
+        ...wallet,
+        type: WalletMapper.toDomainType(wallet.type),
+      };
     } catch (error) {
       this.logger.error(
         'Failed to update wallet status',
@@ -285,11 +247,9 @@ export class WalletsService {
   async getWalletStateForTransaction(
     walletId: WalletId,
   ): Promise<WalletStateForTransaction> {
-    let wallet: WalletStateForTransaction | null;
-
     // DB call to get the wallet state for transaction
-    try {
-      wallet = await this.prisma.wallet.findUnique({
+    const wallet = await this.prisma.wallet
+      .findUnique({
         where: {
           id: walletId.value,
           isActive: true,
@@ -299,17 +259,17 @@ export class WalletsService {
           type: true,
           balance: true,
         },
-      });
-    } catch (error) {
-      this.logger.error(
-        'Failed to get wallet state for transaction',
-        error instanceof Error ? error.stack : error,
-      );
+      })
+      .catch((error) => {
+        this.logger.error(
+          'Failed to get wallet state for transaction',
+          error instanceof Error ? error.stack : error,
+        );
 
-      throw new InternalServerErrorException(
-        'An error ocured while getting wallet state for transaction',
-      );
-    }
+        throw new InternalServerErrorException(
+          'An error ocured while getting wallet state for transaction',
+        );
+      });
 
     // The wallet is not found in the database, throw a NotFoundException to inform the caller that the wallet with the specified ID does not exist or is inactive.
     if (!wallet) {
@@ -318,7 +278,10 @@ export class WalletsService {
       );
     }
 
-    return wallet;
+    return {
+      ...wallet,
+      type: WalletMapper.toDomainType(wallet.type),
+    };
   }
 
   async getOwnWalletId(userId: UserId): Promise<WalletId> {
@@ -384,7 +347,7 @@ export class WalletsService {
   }
 
   async createBusinessWallet(
-    tx: Parameters<WalletsService['createPersonalWallet']>[0],
+    tx: Prisma.TransactionClient,
     userId: string,
     role: Role,
   ): Promise<void> {
@@ -400,7 +363,7 @@ export class WalletsService {
     await tx.wallet.create({
       data: {
         userId,
-        type: walletType,
+        type: WalletMapper.toPrismaType(walletType),
         balance: 0n,
       },
     });
