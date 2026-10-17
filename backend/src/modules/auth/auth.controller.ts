@@ -29,6 +29,11 @@ import { ActiveAccountGuard } from './guards/active-account.guard';
 import { TrustedDeviceResponse } from './interfaces/trusted-device-response.interface';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { DeviceIdParam } from './dto/device-id-param.dto';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { Role } from 'generated/prisma/enums';
+import { ApproveBusinessDto } from './dto/approve-business.dto';
+import { ApproveBusinessAccountResponse } from './interfaces/business-account.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -124,5 +129,29 @@ export class AuthController {
   ): Promise<void> {
     const userId = UserId.from(rawUserId);
     await this.authService.revokeTrustedDevice(userId, params.deviceRecordId);
+  }
+
+  @Post('register-business')
+  @HttpCode(HttpStatus.CREATED)
+  async registerBusiness(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: RegisterDto,
+  ): Promise<TokenResponse> {
+    const { accessToken, refreshToken } =
+      await this.authService.registerBusiness(dto);
+    this.cookieService.setRefreshCookies(res, refreshToken);
+    return { accessToken };
+  }
+
+  @Post('business-approvals')
+  @UseGuards(AccessTokenGuard, ActiveAccountGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  async approveBusiness(
+    @CurrentUser('sub') rawAdminUserId: string,
+    @Body() dto: ApproveBusinessDto,
+  ): Promise<ApproveBusinessAccountResponse> {
+    const adminUserId = UserId.from(rawAdminUserId);
+    return await this.authService.approveBusinessAccount(adminUserId, dto);
   }
 }
