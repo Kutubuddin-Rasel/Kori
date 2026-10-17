@@ -13,8 +13,12 @@ import {
   TransactionAmounts,
 } from './interfaces/transaction-response.interface';
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
-import { Prisma, WalletType } from 'generated/prisma/client';
-import { TransactionType } from 'src/domain/enums';
+import { Prisma } from 'generated/prisma/client';
+import {
+  TransactionStatus,
+  TransactionType,
+  WalletType,
+} from 'src/domain/enums';
 import { generateTrxId } from 'src/common/utils/trx-generator.util';
 import { SendMoneyDto } from './dto/send-money.dto';
 import { CashInDto } from './dto/cash-in.dto';
@@ -25,6 +29,8 @@ import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { Money } from 'src/domain/value-objects/money.vo';
+import { TransactionMapper } from 'src/infrastructure/prisma/mappers/transaction.mapper';
+import { WalletMapper } from 'src/infrastructure/prisma/mappers/wallet.mapper';
 
 /**
  * TransactionsService is responsible for handling all financial transactions in the system, including:
@@ -55,7 +61,7 @@ export class TransactionsService implements OnModuleInit {
     try {
       // Load and cache the System Wallet ID on startup
       const systemWallet = await this.prisma.wallet.findFirst({
-        where: { type: WalletType.SYSTEM },
+        where: { type: WalletMapper.toPrismaType(WalletType.SYSTEM) },
         select: { id: true },
       });
 
@@ -395,20 +401,26 @@ export class TransactionsService implements OnModuleInit {
         // -----------------------------------------------------------------
         // 2. RE-FETCH FRESH STATE
         // -----------------------------------------------------------------
-        const lockedSender = await tsx.wallet.findUnique({
-          where: { id: senderWalletId.value },
-        });
-        const lockedReceiver = await tsx.wallet.findUnique({
-          where: { id: receiverWalletId.value },
-        });
-        const lockedSystem = await tsx.wallet.findUnique({
-          where: { id: systemWalletId.value },
-        });
+        const [lockedSender, lockedReceiver, lockedSystem] = await Promise.all([
+          tsx.wallet.findUnique({ where: { id: senderWalletId.value } }),
+          tsx.wallet.findUnique({ where: { id: receiverWalletId.value } }),
+          tsx.wallet.findUnique({ where: { id: systemWalletId.value } }),
+        ]);
 
         // Critical check to ensure all wallets are still present after acquiring locks
         if (!lockedSender || !lockedReceiver || !lockedSystem) {
           throw new InternalServerErrorException(
             'A required wallet vanished during lock acquis',
+          );
+        }
+
+        if (
+          !lockedSender.isActive ||
+          !lockedReceiver.isActive ||
+          !lockedSystem.isActive
+        ) {
+          throw new BadRequestException(
+            'One or more wallets involved are inactive or frozen.',
           );
         }
 
@@ -428,8 +440,10 @@ export class TransactionsService implements OnModuleInit {
           data: {
             trxId,
             idempotencyKey,
-            type,
-            status: 'COMPLETED',
+            type: TransactionMapper.toPrismaType(type),
+            status: TransactionMapper.toPrismaStatus(
+              TransactionStatus.COMPLETED,
+            ),
             amount: transferAmount.minorUnits,
             fee: feeAmount.minorUnits,
             reference,
@@ -513,10 +527,10 @@ export class TransactionsService implements OnModuleInit {
          */
         return {
           trxId: transactionRecord.trxId,
-          type: transactionRecord.type,
+          type: TransactionMapper.toDomainType(transactionRecord.type),
+          status: TransactionMapper.toDomainStatus(transactionRecord.status),
           amount: transferAmount.toString(),
           fee: feeAmount.toString(),
-          status: transactionRecord.status,
           createdAt: transactionRecord.createdAT,
           newBalance: senderWalletId.equals(this.cachedSystemWalletId)
             ? updatedReceiver.balance.toString()

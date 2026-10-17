@@ -1,4 +1,4 @@
-import { TransactionStatus, TransactionType } from 'generated/prisma/enums';
+import { TransactionStatus, TransactionType } from 'src/domain/enums';
 import { Money } from 'src/domain/value-objects/money.vo';
 // This file defines the interfaces for transaction responses in the application.
 export interface TransactionResultResponse {

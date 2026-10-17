@@ -17,6 +17,9 @@ import { CashOutDto } from './dto/cash-out.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { ActiveAccountGuard } from '../auth/guards/active-account.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from 'src/domain/enums';
 
 /**
  * TransactionsController handles all transaction-related endpoints, including sending money,
@@ -27,13 +30,14 @@ import { ActiveAccountGuard } from '../auth/guards/active-account.guard';
  * idempotency key are handled gracefully.
  */
 @Controller('transactions')
-@UseGuards(AccessTokenGuard, ActiveAccountGuard)
+@UseGuards(AccessTokenGuard, ActiveAccountGuard, RolesGuard)
 @UseInterceptors(IdempotencyInterceptor)
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   // Endpoint to send money from one user to another
   @Post('send')
+  @Roles(Role.CUSTOMER)
   async sendMoney(
     @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -45,6 +49,7 @@ export class TransactionsController {
 
   // Endpoint for agents to cash in money to a user's wallet
   @Post('cash-in')
+  @Roles(Role.AGENT)
   async cashIn(
     @CurrentUser('sub') rawAgentId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -56,6 +61,7 @@ export class TransactionsController {
 
   // Endpoint for users to cash out money from their wallet
   @Post('cash-out')
+  @Roles(Role.CUSTOMER)
   async cashOut(
     @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
@@ -67,6 +73,7 @@ export class TransactionsController {
 
   // Endpoint for users to make payments to merchants or service providers
   @Post('payment')
+  @Roles(Role.CUSTOMER)
   async payment(
     @CurrentUser('sub') rawUserId: string,
     @Headers('x-idempotency-key') idempotencyKey: string,
