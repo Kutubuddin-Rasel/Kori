@@ -1,5 +1,5 @@
-import { AccountStatus, Role } from 'generated/prisma/enums';
 import { AuthenticatedRequest } from 'src/common/decorators/current-user.decorator';
+import { AccountStatus, Role } from 'src/domain/enums';
 
 export interface CurrentAccountPayload {
   id: string;

@@ -1,4 +1,4 @@
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/domain/enums';
 
 export interface ApproveBusinessAccountResponse {
   id: string;

@@ -18,7 +18,8 @@ import { PasswordService } from './services/password.service';
 import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
-import { AccountStatus, Role, User } from '../../../generated/prisma/client';
+import { User } from '../../../generated/prisma/client';
+import { AccountStatus, Role } from 'src/domain/enums';
 import { WalletsService } from '../wallets/wallets.service';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
@@ -32,6 +33,7 @@ import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { ApproveBusinessDto } from './dto/approve-business.dto';
 import { ApproveBusinessAccountResponse } from './interfaces/business-account.interface';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
+import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
 
 @Injectable()
 export class AuthService {
@@ -246,7 +248,7 @@ export class AuthService {
     await this.clearLoginFailureState(phone);
 
     // 5. Check if the account is suspended or banned
-    if (user.status !== AccountStatus.ACTIVE) {
+    if (AccountMapper.toDomainStatus(user.status) !== AccountStatus.ACTIVE) {
       throw new ForbiddenException({
         code: 'ACCOUNT_RESTRICTED',
         message:
@@ -283,7 +285,9 @@ export class AuthService {
         userId: user.id,
         deviceId,
         isAuthorized: true,
-        user: { is: { status: AccountStatus.ACTIVE } },
+        user: {
+          is: { status: AccountMapper.toPrismaStatus(AccountStatus.ACTIVE) },
+        },
       },
       data: {
         refreshSessionId: sid,
@@ -366,7 +370,10 @@ export class AuthService {
       where: { id: payload.sub },
     });
 
-    if (!user || user.status !== AccountStatus.ACTIVE) {
+    if (
+      !user ||
+      AccountMapper.toDomainStatus(user.status) !== AccountStatus.ACTIVE
+    ) {
       throw new UnauthorizedException({
         code: 'SESSION_INVALID',
         message: 'Your session is no longer valid. Please sign in again.',
@@ -391,7 +398,7 @@ export class AuthService {
         isAuthorized: true,
         user: {
           is: {
-            status: AccountStatus.ACTIVE,
+            status: AccountMapper.toPrismaStatus(AccountStatus.ACTIVE),
           },
         },
       },
@@ -458,7 +465,7 @@ export class AuthService {
     const [accessToken, refreshToken] = await Promise.all([
       // Access token: minimal payload (sub, role) to keep headers small
       this.jwtService.signAsync(
-        { sub: user.id, role: user.role },
+        { sub: user.id, role: AccountMapper.toDomainRole(user.role) },
         {
           secret: this.configService.getOrThrow<string>('ACCESS_TOKEN_SECRET'),
           expiresIn: this.configService.getOrThrow<StringValue>(
@@ -591,7 +598,7 @@ export class AuthService {
           expiresAt: { lte: now },
         },
         data: {
-          role: dto.role,
+          role: AccountMapper.toPrismaRole(dto.role),
           approvedById: adminUserId.value,
           expiresAt,
         },
@@ -604,8 +611,6 @@ export class AuthService {
       const approval = await this.prisma.businessApproval.findUnique({
         where: {
           id: previous.id,
-          activatedAt: null,
-          expiresAt: { lte: now },
         },
         select: {
           id: true,
@@ -619,15 +624,17 @@ export class AuthService {
         throw new ConflictException('Approval Changed. Please retry.');
       }
 
-      return approval;
+      return {
+        ...approval,
+        role: AccountMapper.toDomainRole(approval.role),
+      };
     }
 
-    let approval: ApproveBusinessAccountResponse;
     try {
-      approval = await this.prisma.businessApproval.create({
+      const approval = await this.prisma.businessApproval.create({
         data: {
           phone,
-          role: dto.role,
+          role: AccountMapper.toPrismaRole(dto.role),
           approvedById: adminUserId.value,
           expiresAt,
         },
@@ -639,7 +646,10 @@ export class AuthService {
         },
       });
 
-      return approval;
+      return {
+        ...approval,
+        role: AccountMapper.toDomainRole(approval.role),
+      };
     } catch (error) {
       // Another admin request may have created the same approval.
       if (
@@ -693,7 +703,9 @@ export class AuthService {
           });
         }
 
-        if (approval.role !== Role.AGENT && approval.role !== Role.MERCHANT) {
+        const role = AccountMapper.toDomainRole(approval.role);
+
+        if (role !== Role.AGENT && role !== Role.MERCHANT) {
           throw new ForbiddenException({
             code: 'BUSINESS_APPROVAL_INVALID',
             message: 'Invalid approved account type.',
@@ -725,7 +737,7 @@ export class AuthService {
           },
         });
 
-        await this.walletsService.createBusinessWallet(tx, user.id, user.role);
+        await this.walletsService.createBusinessWallet(tx, user.id, role);
 
         const sid = randomUUID();
         const jti = randomUUID();

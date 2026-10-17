@@ -1,4 +1,4 @@
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/domain/enums';
 
 // This file defines the interfaces for the JWT payloads and the authentication cookie used in the authentication module.
 export interface RefreshTokenPayload {

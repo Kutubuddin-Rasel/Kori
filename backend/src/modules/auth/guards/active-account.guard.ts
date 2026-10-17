@@ -8,11 +8,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
-import {
-  CurrentAccountPayload,
-  CurrentAccountRequest,
-} from '../interfaces/active-account.interface';
-import { AccountStatus } from 'generated/prisma/enums';
+import { CurrentAccountRequest } from '../interfaces/active-account.interface';
+import { AccountStatus } from 'src/domain/enums';
+import { RawAccountPayload } from 'src/infrastructure/interfaces/prisma.interface';
+import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
 
 @Injectable()
 export class ActiveAccountGuard implements CanActivate {
@@ -26,10 +25,10 @@ export class ActiveAccountGuard implements CanActivate {
     if (!user) {
       throw new UnauthorizedException('Authentication required');
     }
-    let account: CurrentAccountPayload | null = null;
+    let rawAccount: RawAccountPayload | null = null;
 
     try {
-      account = await this.prisma.user.findUnique({
+      rawAccount = await this.prisma.user.findUnique({
         where: { id: user.sub },
         select: {
           id: true,
@@ -48,9 +47,11 @@ export class ActiveAccountGuard implements CanActivate {
       );
     }
 
-    if (!account) {
+    if (!rawAccount) {
       throw new UnauthorizedException('User account not found.');
     }
+
+    const account = AccountMapper.toCurrentAccountPayload(rawAccount);
 
     if (account.status !== AccountStatus.ACTIVE) {
       throw new ForbiddenException(
@@ -58,12 +59,7 @@ export class ActiveAccountGuard implements CanActivate {
       );
     }
 
-    request.currentAccount = {
-      id: account.id,
-      role: account.role,
-      status: account.status,
-    };
-
+    request.currentAccount = account;
     return true;
   }
 }

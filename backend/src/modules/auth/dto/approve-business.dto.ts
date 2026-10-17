@@ -1,5 +1,5 @@
 import { IsIn, IsNotEmpty, IsPhoneNumber } from 'class-validator';
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/domain/enums';
 
 export class ApproveBusinessDto {
   @IsNotEmpty()

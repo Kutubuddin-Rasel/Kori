@@ -22,7 +22,8 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
 import { VERIFY_OTP_SCRIPT } from '../scripts/verify-otp.script';
 import { AuthProofService } from './auth-proof.service';
-import { AccountStatus } from 'generated/prisma/enums';
+import { AccountStatus } from 'src/domain/enums';
+import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
 
 @Injectable()
 export class OtpService {
@@ -234,7 +235,10 @@ export class OtpService {
           message: 'Start device verification from login first.',
         });
       }
-      if (existingUser.status !== AccountStatus.ACTIVE) {
+      if (
+        AccountMapper.toDomainStatus(existingUser.status) !==
+        AccountStatus.ACTIVE
+      ) {
         throw new ForbiddenException({
           code: 'ACCOUNT_RESTRICTED',
 

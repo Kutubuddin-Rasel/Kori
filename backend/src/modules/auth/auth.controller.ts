@@ -31,7 +31,7 @@ import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { DeviceIdParam } from './dto/device-id-param.dto';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
-import { Role } from 'generated/prisma/enums';
+import { Role } from 'src/domain/enums';
 import { ApproveBusinessDto } from './dto/approve-business.dto';
 import { ApproveBusinessAccountResponse } from './interfaces/business-account.interface';
 
