@@ -17,7 +17,7 @@ import {
   DefaultArgs,
   PrismaClientKnownRequestError,
 } from '@prisma/client/runtime/client';
-import { PrismaClient } from 'generated/prisma/client';
+import { PrismaClient, Role } from 'generated/prisma/client';
 import { WalletType } from 'src/domain/enums';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
@@ -381,5 +381,28 @@ export class WalletsService {
         'Failed to resolve recipient account',
       );
     }
+  }
+
+  async createBusinessWallet(
+    tx: Parameters<WalletsService['createPersonalWallet']>[0],
+    userId: string,
+    role: Role,
+  ): Promise<void> {
+    if (role !== Role.AGENT && role !== Role.MERCHANT) {
+      throw new BadRequestException(
+        'Only AGENT and MERCHANT wallets can be provisioned here.',
+      );
+    }
+
+    const walletType =
+      role === Role.AGENT ? WalletType.AGENT : WalletType.MERCHANT;
+
+    await tx.wallet.create({
+      data: {
+        userId,
+        type: walletType,
+        balance: 0n,
+      },
+    });
   }
 }
