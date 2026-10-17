@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -17,7 +18,7 @@ import { PasswordService } from './services/password.service';
 import { RefreshTokenPayload } from './interfaces/jwt.interface';
 import { JwtService } from '@nestjs/jwt';
 import { StringValue } from 'ms';
-import { AccountStatus, User } from '../../../generated/prisma/client';
+import { AccountStatus, Role, User } from '../../../generated/prisma/client';
 import { WalletsService } from '../wallets/wallets.service';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { TooManyRequestsException } from './exceptions/too-many-requests.exception';
@@ -28,6 +29,9 @@ import { randomUUID } from 'crypto';
 import { parseRefreshTokenClaims } from './utils/parse-refresh-token-claims';
 import { TrustedDeviceResponse } from './interfaces/trusted-device-response.interface';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
+import { ApproveBusinessDto } from './dto/approve-business.dto';
+import { ApproveBusinessAccountResponse } from './interfaces/business-account.interface';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 
 @Injectable()
 export class AuthService {
@@ -540,6 +544,218 @@ export class AuthService {
         code: 'DEVICE_NOT_FOUND',
         message: 'Device not found.',
       });
+    }
+  }
+
+  async approveBusinessAccount(
+    adminUserId: UserId,
+    dto: ApproveBusinessDto,
+  ): Promise<ApproveBusinessAccountResponse> {
+    const phone = PhoneNumber.from(dto.phone).value;
+
+    if (dto.role !== Role.AGENT && dto.role !== Role.MERCHANT) {
+      throw new BadRequestException('Invalid business role.');
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { phone },
+      select: { id: true },
+    });
+
+    if (existingUser) {
+      throw new ConflictException({
+        code: 'ACCOUNT_PHONE_IN_USE',
+        message: 'This phone already belongs to an account.',
+      });
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+
+    const previous = await this.prisma.businessApproval.findUnique({
+      where: { phone },
+    });
+
+    if (previous) {
+      if (previous.activatedAt !== null || previous.expiresAt > now) {
+        throw new ConflictException({
+          code: 'BUSINESS_APPROVAL_EXISTS',
+          message: 'An approval already exists.',
+        });
+      }
+
+      const updated = await this.prisma.businessApproval.updateMany({
+        where: {
+          id: previous.id,
+          activatedAt: null,
+          expiresAt: { lte: now },
+        },
+        data: {
+          role: dto.role,
+          approvedById: adminUserId.value,
+          expiresAt,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ConflictException('Approval Changed. Please retry.');
+      }
+
+      const approval = await this.prisma.businessApproval.findUnique({
+        where: {
+          id: previous.id,
+          activatedAt: null,
+          expiresAt: { lte: now },
+        },
+        select: {
+          id: true,
+          phone: true,
+          role: true,
+          expiresAt: true,
+        },
+      });
+
+      if (!approval) {
+        throw new ConflictException('Approval Changed. Please retry.');
+      }
+
+      return approval;
+    }
+
+    let approval: ApproveBusinessAccountResponse;
+    try {
+      approval = await this.prisma.businessApproval.create({
+        data: {
+          phone,
+          role: dto.role,
+          approvedById: adminUserId.value,
+          expiresAt,
+        },
+        select: {
+          id: true,
+          phone: true,
+          role: true,
+          expiresAt: true,
+        },
+      });
+
+      return approval;
+    } catch (error) {
+      // Another admin request may have created the same approval.
+      if (
+        error instanceof PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Approval already exist');
+      }
+
+      throw error;
+    }
+  }
+
+  async registerBusiness(dto: RegisterDto): Promise<TokensResponse> {
+    const phone = PhoneNumber.from(dto.phone).value;
+
+    const { pin, deviceId, registrationToken } = dto;
+
+    const proofStatus =
+      await this.authProofService.consumeRegistrationAuthorization(
+        phone,
+        deviceId,
+        registrationToken,
+      );
+
+    if (proofStatus !== 'CONSUMED') {
+      throw new UnauthorizedException({
+        code: 'REGISTRATION_AUTHORIZATION_INVALID',
+        message: 'Registration authorization is invalid or expired.',
+      });
+    }
+
+    const hashedPin = await this.passwordService.hash(pin);
+
+    try {
+      const tokens = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+
+        const approval = await tx.businessApproval.findUnique({
+          where: { phone },
+        });
+
+        if (
+          !approval ||
+          approval.activatedAt !== null ||
+          approval.expiresAt <= now
+        ) {
+          throw new ForbiddenException({
+            code: 'BUSINESS_APPROVAL_REQUIRED',
+            message: 'No valid business approval exists for this phone.',
+          });
+        }
+
+        if (approval.role !== Role.AGENT && approval.role !== Role.MERCHANT) {
+          throw new ForbiddenException({
+            code: 'BUSINESS_APPROVAL_INVALID',
+            message: 'Invalid approved account type.',
+          });
+        }
+
+        const claimed = await tx.businessApproval.updateMany({
+          where: {
+            id: approval.id,
+            role: approval.role,
+            activatedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          data: { activatedAt: new Date() },
+        });
+
+        if (claimed.count !== 1) {
+          throw new ConflictException({
+            code: 'BUSINESS_APPROVAL_ALREADY_USED',
+            message: 'Business approval is no longer available.',
+          });
+        }
+
+        const user = await tx.user.create({
+          data: {
+            phone,
+            pin: hashedPin,
+            role: approval.role,
+          },
+        });
+
+        await this.walletsService.createBusinessWallet(tx, user.id, user.role);
+
+        const sid = randomUUID();
+        const jti = randomUUID();
+
+        await tx.trustDevice.create({
+          data: {
+            userId: user.id,
+            deviceId,
+            isAuthorized: true,
+            refreshSessionId: sid,
+            currentRefreshJti: jti,
+          },
+        });
+
+        return this.getTokens(user, deviceId, sid, jti);
+      });
+
+      return tokens;
+    } catch (error) {
+      if (
+        error instanceof PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'BUSINESS_REGISTRATION_CONFLICT',
+          message: 'This account or approval conflicts with existing data.',
+        });
+      }
+
+      throw error;
     }
   }
 }
