@@ -13,11 +13,12 @@ import {
   WalletStateForTransaction,
 } from './interfaces/wallet-interface';
 import { Prisma } from 'generated/prisma/client';
-import { Role, WalletType } from 'src/domain/enums';
+import { AccountStatus, Role, WalletType } from 'src/domain/enums';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { WalletMapper } from 'src/infrastructure/prisma/mappers/wallet.mapper';
+import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
 
 /**
  * WalletsService is responsible for all wallet-related operations, including retrieving wallet balances,
@@ -60,13 +61,6 @@ export class WalletsService {
     if (!wallet) {
       throw new NotFoundException(
         'No wallet found for this account. Contact Support',
-      );
-    }
-
-    // The wallet is found but is inactive, throw a BadRequestException to inform the user that their wallet is frozen and cannot be used for transactions.
-    if (!wallet.isActive) {
-      throw new BadRequestException(
-        `Your wallet is currently frozen. Contact support.`,
       );
     }
 
@@ -140,104 +134,72 @@ export class WalletsService {
     Admin-only: Freeze a wallet. The wallet can not transact
    */
   async deactiveWallet(walletId: WalletId): Promise<WalletOwnerResponse> {
-    const existingWallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId.value },
-      select: {
-        isActive: true,
-      },
-    });
-
-    if (!existingWallet) {
-      throw new NotFoundException(
-        `Wallet wiht ID:${walletId.toString()} is not exist`,
-      );
-    }
-    if (!existingWallet.isActive) {
-      throw new ConflictException('Wallet is already deactived');
-    }
+    await this.assertManageableWallet(walletId);
 
     // Update the wallet's isActive status to false, so it can no longer be used for trnasactions.
-    try {
-      const wallet = await this.prisma.wallet.update({
-        where: { id: walletId.value },
-        data: { isActive: false },
-        select: {
-          id: true,
-          balance: true,
-          type: true,
-          isActive: true,
-          currency: true,
-          createdAT: true,
-          userId: true,
-        },
+    const wallet = await this.prisma.wallet.updateMany({
+      where: {
+        id: walletId.value,
+        isActive: true,
+        userId: { not: null },
+        type: { not: WalletMapper.toPrismaType(WalletType.SYSTEM) },
+      },
+      data: { isActive: false },
+    });
+
+    if (wallet.count !== 1) {
+      throw new ConflictException({
+        code: 'WALLET_STATE_CHANGED',
+        message: 'Wallet is already frozen or its state changed.',
       });
-
-      return {
-        ...wallet,
-        type: WalletMapper.toDomainType(wallet.type),
-      };
-    } catch (error) {
-      this.logger.error(
-        'Failed to update wallet status',
-        error instanceof Error ? error.stack : error,
-      );
-
-      throw new InternalServerErrorException(
-        'An error ocured while changing wallet status',
-      );
     }
+    return this.getWalletById(walletId);
   }
 
   /*
     Admin-only: Freeze a wallet. The wallet can not transact
    */
   async activeWallet(walletId: WalletId): Promise<WalletOwnerResponse> {
-    const existingWallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId.value },
-      select: {
-        isActive: true,
-      },
-    });
+    await this.assertManageableWallet(walletId);
 
-    if (!existingWallet) {
-      throw new NotFoundException(
-        `Wallet wiht ID:${walletId.toString()} is not exist`,
-      );
-    }
-    if (existingWallet.isActive) {
-      throw new ConflictException('Wallet is already actived');
-    }
-
-    // Update the wallet's isActive status to true, so it can be used for trnasactions again.
-    try {
-      const wallet = await this.prisma.wallet.update({
-        where: { id: walletId.value },
-        data: { isActive: true },
-        select: {
-          id: true,
-          balance: true,
-          type: true,
-          isActive: true,
-          currency: true,
-          createdAT: true,
-          userId: true,
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.wallet.updateMany({
+        where: {
+          id: walletId.value,
+          isActive: false,
+          userId: { not: null },
+          type: { not: WalletMapper.toPrismaType(WalletType.SYSTEM) },
         },
+        data: { isActive: true },
       });
 
-      return {
-        ...wallet,
-        type: WalletMapper.toDomainType(wallet.type),
-      };
-    } catch (error) {
-      this.logger.error(
-        'Failed to update wallet status',
-        error instanceof Error ? error.stack : error,
-      );
+      if (result.count !== 1) {
+        throw new ConflictException({
+          code: 'WALLET_STATE_CHANGED',
+          message: 'Wallet is already active or its state changed.',
+        });
+      }
 
-      throw new InternalServerErrorException(
-        'An error ocured while changing wallet status',
-      );
-    }
+      const wallet = await tx.wallet.findUnique({
+        where: {
+          id: walletId.value,
+          user: {
+            is: { status: AccountMapper.toPrismaStatus(AccountStatus.ACTIVE) },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!wallet) {
+        throw new ConflictException({
+          code: 'ACCOUNT_NOT_ACTIVE',
+          message:
+            'Cannot activate a wallet whose owner account is restricted.',
+        });
+      }
+    });
+
+    return this.getWalletById(walletId);
   }
 
   /**
@@ -367,5 +329,38 @@ export class WalletsService {
         balance: 0n,
       },
     });
+  }
+
+  private async assertManageableWallet(walletId: WalletId): Promise<void> {
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { id: walletId.value },
+      select: {
+        id: true,
+        type: true,
+        userId: true,
+      },
+    });
+
+    if (!wallet) {
+      throw new NotFoundException({
+        code: 'WALLET_NOT_FOUND',
+        message: 'Wallet not found.',
+      });
+    }
+
+    if (WalletMapper.toDomainType(wallet.type) === WalletType.SYSTEM) {
+      throw new ConflictException({
+        code: 'SYSTEM_WALLET_PROTECTED',
+        message:
+          'The SYSTEM wallet cannot be frozen or activated through this operation.',
+      });
+    }
+
+    if (!wallet.userId) {
+      throw new ConflictException({
+        code: 'WALLET_OWNER_INVALID',
+        message: 'Wallet ownership is invalid.',
+      });
+    }
   }
 }
