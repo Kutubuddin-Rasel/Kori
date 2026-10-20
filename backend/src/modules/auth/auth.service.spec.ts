@@ -274,8 +274,8 @@ describe('AuthService', () => {
       data: {
         userId: 'user-1',
         deviceId: credentials.deviceId,
-        refreshSessionId: expect.any(String),
-        currentRefreshJti: expect.any(String),
+        refreshSessionId: expect.any(String) as unknown as string,
+        currentRefreshJti: expect.any(String) as unknown as string,
         isAuthorized: true,
       },
     });
@@ -406,7 +406,6 @@ describe('AuthService', () => {
         refreshToken: 'mocked.refresh.token',
       });
 
-      // Verify updateMany was called with both refreshSessionId (sid) and currentRefreshJti (jti) together
       expect(prismaServiceStub.trustDevice.updateMany).toHaveBeenCalledWith({
         where: {
           userId: user.id,
@@ -415,14 +414,23 @@ describe('AuthService', () => {
           user: { is: { status: 'ACTIVE' } },
         },
         data: {
-          refreshSessionId: expect.any(String),
-          currentRefreshJti: expect.any(String),
-          lastUsedAt: expect.any(Date),
+          refreshSessionId: expect.any(String) as unknown as string,
+          currentRefreshJti: expect.any(String) as unknown as string,
+          lastUsedAt: expect.any(Date) as unknown as Date,
         },
       });
 
-      const updateCallArgs =
-        prismaServiceStub.trustDevice.updateMany.mock.calls[0][0];
+      interface UpdateManyTrustDeviceCall {
+        data: {
+          refreshSessionId: string;
+          currentRefreshJti: string;
+          lastUsedAt: Date;
+        };
+      }
+
+      const rawCalls = prismaServiceStub.trustDevice.updateMany.mock
+        .calls as unknown as unknown[][];
+      const updateCallArgs = rawCalls[0][0] as UpdateManyTrustDeviceCall;
       const storedSid = updateCallArgs.data.refreshSessionId;
       const storedJti = updateCallArgs.data.currentRefreshJti;
 
@@ -439,7 +447,7 @@ describe('AuthService', () => {
           sid: storedSid,
           jti: storedJti,
         }),
-        expect.any(Object),
+        expect.any(Object) as unknown,
       );
     });
   });

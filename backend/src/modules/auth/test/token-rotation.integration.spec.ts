@@ -12,21 +12,45 @@ import { Role } from 'src/domain/enums';
 import { AccountStatus } from 'generated/prisma/client';
 import { RefreshTokenPayload } from '../interfaces/jwt.interface';
 
+interface UserRecord {
+  id: string;
+  role: Role;
+  status: AccountStatus;
+}
+
+interface TrustDeviceRecord {
+  isAuthorized: boolean;
+  refreshSessionId: string | null;
+  currentRefreshJti: string | null;
+}
+
+interface UpdateManyResult {
+  count: number;
+}
+
+interface UpdateManyCallPayload {
+  where: unknown;
+  data: {
+    currentRefreshJti: string;
+    lastUsedAt: Date;
+  };
+}
+
 describe('[Integration] Token Rotation and Session Isolation', () => {
   let authService: AuthService;
 
   const prismaMock = {
     user: {
-      findUnique: jest.fn(),
+      findUnique: jest.fn<Promise<UserRecord | null>, [unknown]>(),
     },
     trustDevice: {
-      updateMany: jest.fn(),
-      findUnique: jest.fn(),
+      updateMany: jest.fn<Promise<UpdateManyResult>, [unknown]>(),
+      findUnique: jest.fn<Promise<TrustDeviceRecord | null>, [unknown]>(),
     },
   };
 
   const jwtServiceMock = {
-    signAsync: jest.fn(),
+    signAsync: jest.fn<Promise<string>, [unknown, unknown?]>(),
   };
 
   const configServiceMock = {
@@ -69,7 +93,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
   };
 
   describe('Normal refresh A → B', () => {
-    it('rotates currentRefreshJti to B (count: 1) and returns fresh tokens', async () => {
+    it('should rotate currentRefreshJti to B and return fresh tokens when refresh payload is valid', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
@@ -104,14 +128,15 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
           },
         },
         data: {
-          currentRefreshJti: expect.any(String),
-          lastUsedAt: expect.any(Date),
+          currentRefreshJti: expect.any(String) as unknown as string,
+          lastUsedAt: expect.any(Date) as unknown as Date,
         },
       });
 
-      const updatedJti =
-        prismaMock.trustDevice.updateMany.mock.calls[0][0].data
-          .currentRefreshJti;
+      const rawCalls = prismaMock.trustDevice.updateMany.mock
+        .calls as unknown as unknown[][];
+      const updateCall = rawCalls[0][0] as UpdateManyCallPayload;
+      const updatedJti = updateCall.data.currentRefreshJti;
       expect(updatedJti).not.toEqual(basePayload.jti);
 
       // Verify tokens were signed with new JTI but preserved SID
@@ -122,13 +147,13 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
           sid: basePayload.sid,
           jti: updatedJti,
         }),
-        expect.any(Object),
+        expect.any(Object) as unknown as object,
       );
     });
   });
 
   describe('Reuse A after rotation (Replay Attack Detection)', () => {
-    it('detects replay of old jti A, completely revokes the session, and throws 401', async () => {
+    it('should detect replay of old JTI, revoke the session, and throw UnauthorizedException', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
@@ -177,7 +202,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
   });
 
   describe('Old S1 token after new S2 login (Old-Session Isolation)', () => {
-    it('rejects old S1 token with 401 but leaves active S2 session intact', async () => {
+    it('should reject old session token with UnauthorizedException while leaving active session intact', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
@@ -210,7 +235,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
   });
 
   describe('Revoked device refresh', () => {
-    it('rejects with 401 and does not rotate tokens when device is deauthorized', async () => {
+    it('should reject with UnauthorizedException and not rotate tokens when device is deauthorized', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
@@ -237,7 +262,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
   });
 
   describe('User suspended before refresh', () => {
-    it('throws 401 immediately if user status is SUSPENDED without touching trustDevice', async () => {
+    it('should throw UnauthorizedException immediately when user status is SUSPENDED without querying trustDevice', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
@@ -255,7 +280,7 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
   });
 
   describe('Account role changes before refresh', () => {
-    it('issues new access token reflecting the updated role from database', async () => {
+    it('should issue new access token reflecting updated role from database when role changes before refresh', async () => {
       // User was promoted from CUSTOMER to AGENT in DB
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
@@ -279,13 +304,13 @@ describe('[Integration] Token Rotation and Session Isolation', () => {
           sub: basePayload.sub,
           role: Role.AGENT,
         }),
-        expect.any(Object),
+        expect.any(Object) as unknown as object,
       );
     });
   });
 
   describe('Failed CAS without JTI advancement', () => {
-    it('rejects with 401 but does not trigger replay revocation when stored JTI matches presented JTI', async () => {
+    it('should reject with UnauthorizedException without triggering replay revocation when stored JTI has not advanced', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce({
         id: basePayload.sub,
         role: Role.CUSTOMER,
