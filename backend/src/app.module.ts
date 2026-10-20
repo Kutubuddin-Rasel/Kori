@@ -8,6 +8,7 @@ import { RedisModule } from './infrastructure/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
     AuthModule,
     WalletsModule,
     TransactionsModule,
+    AccountsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

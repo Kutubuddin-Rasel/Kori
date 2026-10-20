@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -15,6 +16,7 @@ import {
 import { calculateFee } from 'src/common/utils/fee-calculator.util';
 import { Prisma } from 'generated/prisma/client';
 import {
+  AccountStatus,
   TransactionStatus,
   TransactionType,
   WalletType,
@@ -31,6 +33,7 @@ import { PhoneNumber } from 'src/domain/value-objects/phone-number.vo';
 import { Money } from 'src/domain/value-objects/money.vo';
 import { TransactionMapper } from 'src/infrastructure/prisma/mappers/transaction.mapper';
 import { WalletMapper } from 'src/infrastructure/prisma/mappers/wallet.mapper';
+import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
 
 /**
  * TransactionsService is responsible for handling all financial transactions in the system, including:
@@ -402,26 +405,40 @@ export class TransactionsService implements OnModuleInit {
         // 2. RE-FETCH FRESH STATE
         // -----------------------------------------------------------------
         const [lockedSender, lockedReceiver, lockedSystem] = await Promise.all([
-          tsx.wallet.findUnique({ where: { id: senderWalletId.value } }),
-          tsx.wallet.findUnique({ where: { id: receiverWalletId.value } }),
-          tsx.wallet.findUnique({ where: { id: systemWalletId.value } }),
+          tsx.wallet.findUnique({
+            where: {
+              id: senderWalletId.value,
+              isActive: true,
+              user: {
+                status: AccountMapper.toPrismaStatus(AccountStatus.ACTIVE),
+              },
+            },
+          }),
+
+          tsx.wallet.findUnique({
+            where: {
+              id: receiverWalletId.value,
+              isActive: true,
+              user: {
+                status: AccountMapper.toPrismaStatus(AccountStatus.ACTIVE),
+              },
+            },
+          }),
+
+          tsx.wallet.findUnique({
+            where: {
+              id: systemWalletId.value,
+              isActive: true,
+            },
+          }),
         ]);
 
         // Critical check to ensure all wallets are still present after acquiring locks
         if (!lockedSender || !lockedReceiver || !lockedSystem) {
-          throw new InternalServerErrorException(
-            'A required wallet vanished during lock acquis',
-          );
-        }
-
-        if (
-          !lockedSender.isActive ||
-          !lockedReceiver.isActive ||
-          !lockedSystem.isActive
-        ) {
-          throw new BadRequestException(
-            'One or more wallets involved are inactive or frozen.',
-          );
+          throw new ForbiddenException({
+            code: 'TRANSACTION_PARTICIPANT_RESTRICTED',
+            message: 'One or more transaction participants are restricted.',
+          });
         }
 
         // Check if sender has sufficient funds after acquiring locks to prevent issues with concurrent transactions that may have modified the sender's balance before locks were acquired
