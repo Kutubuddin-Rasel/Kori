@@ -5,8 +5,17 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp } from 'src/app.setup';
 
+interface ErrorEnvelopeHttpDto {
+  success: boolean;
+  path: string;
+  message?: string[];
+}
+
+type SupertestTarget = Parameters<typeof request>[0];
+
 describe('Application bootstrap (e2e)', () => {
   let app: INestApplication<App>;
+  let server: SupertestTarget;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -17,6 +26,7 @@ describe('Application bootstrap (e2e)', () => {
     configureApp(app);
 
     await app.init();
+    server = app.getHttpServer() as unknown as SupertestTarget;
   });
 
   afterAll(async () => {
@@ -24,14 +34,11 @@ describe('Application bootstrap (e2e)', () => {
   });
 
   it('serves the root endpoint under the production API prefix', async () => {
-    await request(app.getHttpServer())
-      .get('/api/v1')
-      .expect(200)
-      .expect('Hello World!');
+    await request(server).get('/api/v1').expect(200).expect('Hello World!');
   });
 
   it('does not expose application routes outside the API prefix', async () => {
-    const response = await request(app.getHttpServer()).get('/').expect(404);
+    const response = await request(server).get('/').expect(404);
 
     expect(response.body).toEqual(
       expect.objectContaining({
@@ -42,7 +49,7 @@ describe('Application bootstrap (e2e)', () => {
   });
 
   it('uses the production validation and error envelope', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .post('/api/v1/auth/send-otp')
       .send({
         phone: '+8801712345678',
@@ -58,13 +65,14 @@ describe('Application bootstrap (e2e)', () => {
       }),
     );
 
-    expect(response.body.message).toEqual(
+    const body = response.body as unknown as ErrorEnvelopeHttpDto;
+    expect(body.message).toEqual(
       expect.arrayContaining(['property unexpectedField should not exist']),
     );
   });
 
   it('does not expose an unverified public Add Money route', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .post('/api/v1/transactions/add-money')
       .send({
         amountMinorUnits: '10000',
