@@ -50,7 +50,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     await moduleRef.close();
   });
 
-  it('at most one rotation succeeds; strict replay revokes resulting session in PostgreSQL', async () => {
+  it('should ensure at most one rotation succeeds and strict replay revokes resulting session in PostgreSQL when two refreshes race', async () => {
     const initialSid = randomUUID();
     const initialJti = randomUUID();
 
@@ -111,7 +111,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(deviceState?.currentRefreshJti).toBeNull();
   });
 
-  it('rejects S1 without revoking newer session S2', async () => {
+  it('should reject old session S1 token without revoking newer active session S2', async () => {
     const sid1 = randomUUID();
     const jti1 = randomUUID();
 
@@ -181,13 +181,14 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
       tokenUse: 'refresh',
     };
 
-    await expect(authService.refreshTokens(currentPayload)).resolves.toEqual({
-      accessToken: expect.any(String),
-      refreshToken: expect.any(String),
-    });
+    const refreshed = await authService.refreshTokens(currentPayload);
+    expect(typeof refreshed.accessToken).toBe('string');
+    expect(refreshed.accessToken.length).toBeGreaterThan(0);
+    expect(typeof refreshed.refreshToken).toBe('string');
+    expect(refreshed.refreshToken.length).toBeGreaterThan(0);
   });
 
-  it('does not revoke S2 using an old S1 logout', async () => {
+  it('should not revoke newer session S2 when logout is called with old session S1 credentials', async () => {
     const sid1 = randomUUID();
     const jti1 = randomUUID();
 
@@ -241,7 +242,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(device.currentRefreshJti).toBe(jti2);
   });
 
-  it('Logout terminates only the matching session family', async () => {
+  it('should terminate only the matching session family when logout is executed across multiple devices', async () => {
     const sid1 = randomUUID();
     const jti1 = randomUUID();
 
@@ -299,7 +300,7 @@ describe('[Integration Real PostgreSQL] Two concurrent refreshes of token A', ()
     expect(deviceB.isAuthorized).toBe(true);
   });
 
-  it('Repeat logout safely', async () => {
+  it('should handle repeat logout idempotently without throwing errors', async () => {
     const sid = randomUUID();
     const jti = randomUUID();
 

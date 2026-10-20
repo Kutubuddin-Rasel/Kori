@@ -7,20 +7,26 @@ import { AuthProofService } from '../services/auth-proof.service';
 import { Logger } from '@nestjs/common';
 import { TooManyRequestsException } from '../exceptions/too-many-requests.exception';
 
+interface StoredOtpChallenge {
+  code: string;
+  phone: string;
+  deviceId: string;
+}
+
 describe('OTP service', () => {
   let loggerDebugSpy: jest.SpyInstance;
 
   const mockRedisService = {
-    getStrict: jest.fn(),
-    set: jest.fn(),
-    del: jest.fn(),
-    incrementWithTtl: jest.fn(),
-    evalScript: jest.fn(), // We must mock evalScript!
+    getStrict: jest.fn<Promise<unknown>, [string]>(),
+    set: jest.fn<Promise<boolean>, [string, unknown, number?]>(),
+    del: jest.fn<Promise<number>, [string]>(),
+    incrementWithTtl: jest.fn<Promise<number>, [string, number]>(),
+    evalScript: jest.fn<Promise<unknown>, [string, string[], unknown[]]>(),
   };
 
   const mockPrismaService = {
-    user: { findUnique: jest.fn() },
-    trustDevice: { upsert: jest.fn() },
+    user: { findUnique: jest.fn<Promise<unknown>, [unknown]>() },
+    trustDevice: { upsert: jest.fn<Promise<unknown>, [unknown]>() },
   };
 
   async function createOtpService(
@@ -114,7 +120,7 @@ describe('OTP service', () => {
     expect(loggerDebugSpy).not.toHaveBeenCalled();
   });
 
-  it('returns a challenge id and stores a six-digit OTP', async () => {
+  it('should return challengeId and store six-digit OTP when sendOtp is called', async () => {
     mockRedisService.getStrict.mockResolvedValueOnce(0);
     mockRedisService.set.mockResolvedValue(true);
 
@@ -125,14 +131,16 @@ describe('OTP service', () => {
       deviceId: 'device-1',
     });
 
-    expect(result.challengeId).toEqual(expect.any(String));
+    expect(typeof result.challengeId).toBe('string');
+    expect(result.challengeId.length).toBeGreaterThan(0);
 
-    const challenge = mockRedisService.set.mock.calls[1][1];
+    const rawCalls = mockRedisService.set.mock.calls as unknown as unknown[][];
+    const challenge = rawCalls[1][1] as StoredOtpChallenge;
 
     expect(challenge.code).toMatch(/^\d{6}$/);
   });
 
-  it('rejects an immediate resend', async () => {
+  it('should reject with TooManyRequestsException when an immediate resend is attempted', async () => {
     mockRedisService.getStrict
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(true);

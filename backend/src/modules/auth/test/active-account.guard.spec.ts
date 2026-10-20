@@ -24,6 +24,23 @@ import { Roles } from '../decorators/roles.decorator';
 import { JwtStrategy } from '../strategies/jwt-strategy';
 import { CurrentAccountRequest } from '../interfaces/active-account.interface';
 
+interface ErrorResponse {
+  statusCode: number;
+  message: string;
+  error?: string;
+}
+
+interface SuccessResponse {
+  ok: boolean;
+  role?: string;
+}
+
+interface UserFindUniqueRecord {
+  id: string;
+  role: Role;
+  status: AccountStatus;
+}
+
 @Controller('test-guard')
 @UseGuards(AccessTokenGuard, ActiveAccountGuard)
 class TestGuardController {
@@ -42,6 +59,7 @@ class TestGuardController {
 
 describe('ActiveAccountGuard & Route Authorization', () => {
   let app: INestApplication;
+  let server: Parameters<typeof request>[0];
   let jwtService: JwtService;
   let activeAccountGuard: ActiveAccountGuard;
 
@@ -50,7 +68,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
 
   const prismaMock = {
     user: {
-      findUnique: jest.fn(),
+      findUnique: jest.fn<Promise<UserFindUniqueRecord | null>, [unknown]>(),
     },
   };
 
@@ -87,6 +105,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+    server = app.getHttpServer() as unknown as Parameters<typeof request>[0];
 
     jwtService = moduleFixture.get<JwtService>(JwtService);
     activeAccountGuard =
@@ -101,7 +120,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
     jest.clearAllMocks();
   });
 
-  it('returns 403 Forbidden on admin route when JWT claims role ADMIN but database role is CUSTOMER', async () => {
+  it('should return 403 Forbidden on admin route when JWT claims ADMIN role but database role is CUSTOMER', async () => {
     // Client possesses a valid JWT signed with role ADMIN
     const token = await jwtService.signAsync({
       sub: testUserId,
@@ -115,12 +134,13 @@ describe('ActiveAccountGuard & Route Authorization', () => {
       status: AccountStatus.ACTIVE,
     });
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/test-guard/admin')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
 
-    expect(response.body.message).toContain('Access denied');
+    const body = response.body as unknown as ErrorResponse;
+    expect(body.message).toContain('Access denied');
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: { id: testUserId },
       select: {
@@ -131,7 +151,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
     });
   });
 
-  it('returns 403 Forbidden on protected route when JWT is cryptographically valid but database account status is SUSPENDED', async () => {
+  it('should return 403 Forbidden on protected route when JWT is valid but database account status is SUSPENDED', async () => {
     // Client possesses a cryptographically valid JWT
     const token = await jwtService.signAsync({
       sub: testUserId,
@@ -145,12 +165,13 @@ describe('ActiveAccountGuard & Route Authorization', () => {
       status: AccountStatus.SUSPENDED,
     });
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/test-guard/protected')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
 
-    expect(response.body.message).toBe(
+    const body = response.body as unknown as ErrorResponse;
+    expect(body.message).toBe(
       'Your account is currently restricted. Please contact support.',
     );
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
@@ -163,7 +184,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
     });
   });
 
-  it('returns 200 OK on admin route when both JWT and database role are ADMIN with ACTIVE status', async () => {
+  it('should return 200 OK on admin route when both JWT and database role are ADMIN with ACTIVE status', async () => {
     const token = await jwtService.signAsync({
       sub: testUserId,
       role: Role.ADMIN,
@@ -175,15 +196,16 @@ describe('ActiveAccountGuard & Route Authorization', () => {
       status: AccountStatus.ACTIVE,
     });
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/test-guard/admin')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(response.body).toEqual({ ok: true, role: 'ADMIN' });
+    const body = response.body as unknown as SuccessResponse;
+    expect(body).toEqual({ ok: true, role: 'ADMIN' });
   });
 
-  it('returns 200 OK on protected route when JWT is valid and database status is ACTIVE', async () => {
+  it('should return 200 OK on protected route when JWT is valid and database status is ACTIVE', async () => {
     const token = await jwtService.signAsync({
       sub: testUserId,
       role: Role.CUSTOMER,
@@ -195,12 +217,13 @@ describe('ActiveAccountGuard & Route Authorization', () => {
       status: AccountStatus.ACTIVE,
     });
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/test-guard/protected')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(response.body).toEqual({ ok: true });
+    const body = response.body as unknown as SuccessResponse;
+    expect(body).toEqual({ ok: true });
   });
 
   describe('ActiveAccountGuard unit edge cases', () => {
@@ -211,14 +234,14 @@ describe('ActiveAccountGuard & Route Authorization', () => {
         }),
       }) as unknown as ExecutionContext;
 
-    it('throws UnauthorizedException when request.user is missing', async () => {
+    it('should throw UnauthorizedException when request.user is missing', async () => {
       const context = createMockExecutionContext({});
       await expect(activeAccountGuard.canActivate(context)).rejects.toThrow(
         new UnauthorizedException('Authentication required'),
       );
     });
 
-    it('throws UnauthorizedException when user record is not found in database', async () => {
+    it('should throw UnauthorizedException when user record is not found in database', async () => {
       prismaMock.user.findUnique.mockResolvedValueOnce(null);
       const context = createMockExecutionContext({
         user: { sub: testUserId, role: Role.CUSTOMER },
@@ -229,7 +252,7 @@ describe('ActiveAccountGuard & Route Authorization', () => {
       );
     });
 
-    it('throws InternalServerErrorException when database operation fails', async () => {
+    it('should throw InternalServerErrorException when database operation fails', async () => {
       const loggerSpy = jest
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => {});
