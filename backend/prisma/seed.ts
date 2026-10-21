@@ -55,7 +55,10 @@ async function bootstrapRequiredState(): Promise<void> {
   const systemWallet = await prisma.wallet.create({
     data: {
       type: WalletType.SYSTEM,
+      userId: null,
       currency: 'BDT',
+      isActive: true,
+      balance: 0n,
     },
     select: {
       id: true,

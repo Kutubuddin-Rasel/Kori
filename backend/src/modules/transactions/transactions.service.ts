@@ -63,21 +63,45 @@ export class TransactionsService implements OnModuleInit {
   async onModuleInit() {
     try {
       // Load and cache the System Wallet ID on startup
-      const systemWallet = await this.prisma.wallet.findFirst({
+      const systemWallets = await this.prisma.wallet.findMany({
         where: { type: WalletMapper.toPrismaType(WalletType.SYSTEM) },
-        select: { id: true },
+        select: {
+          id: true,
+          userId: true,
+          currency: true,
+          isActive: true,
+        },
+        take: 2,
       });
 
       // Critical check to ensure the system wallet exists before processing any transactions
-      if (!systemWallet) {
-        throw new InternalServerErrorException(
-          'Critical System Revenue Wallet is missing from the database.',
+      if (systemWallets.length !== 1) {
+        throw new Error(
+          `Expected exactly one SYSTEM wallet, found ${systemWallets.length}.`,
         );
       }
+
+      const systemWallet = systemWallets[0];
+
+      if (
+        systemWallet.userId !== null ||
+        systemWallet.currency !== 'BDT' ||
+        !systemWallet.isActive
+      ) {
+        throw new Error(
+          'SYSTEM wallet has invalid ownership, currency, or activity state.',
+        );
+      }
+
       // Cache the System Wallet ID for fast access during transactions
       this.cachedSystemWalletId = WalletId.from(systemWallet.id);
+      this.logger.log('SYSTEM revenue wallet validated successfully.');
     } catch (error) {
-      this.logger.error('Failed to load system wallet', error);
+      this.logger.error(
+        'Failed to initialize SYSTEM revenue wallet',
+        error instanceof Error ? error.stack : error,
+      );
+
       throw error;
     }
   }
