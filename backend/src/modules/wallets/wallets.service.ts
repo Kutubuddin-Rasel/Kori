@@ -220,6 +220,7 @@ export class WalletsService {
           id: true,
           type: true,
           balance: true,
+          currency: true,
         },
       })
       .catch((error) => {
@@ -243,6 +244,7 @@ export class WalletsService {
     return {
       ...wallet,
       type: WalletMapper.toDomainType(wallet.type),
+      currency: WalletMapper.toDomainCurrency(wallet.currency),
     };
   }
 

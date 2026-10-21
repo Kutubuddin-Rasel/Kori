@@ -17,6 +17,7 @@ import { calculateFee } from 'src/common/utils/fee-calculator.util';
 import { Prisma } from 'generated/prisma/client';
 import {
   AccountStatus,
+  Currency,
   TransactionStatus,
   TransactionType,
   WalletType,
@@ -352,6 +353,16 @@ export class TransactionsService implements OnModuleInit {
       throw new BadRequestException(
         `Unauthorized: Receiver wallet must be of type ${expectedReceiverType}.`,
       );
+    }
+
+    if (
+      senderWallet.currency !== Currency.BDT ||
+      receiverWallet.currency !== Currency.BDT
+    ) {
+      throw new BadRequestException({
+        code: 'CURRENCY_MISMATCH',
+        message: 'Transactions are currently only supported for BDT currency.',
+      });
     }
 
     const senderBalance = Money.fromMinorUnits(senderWallet.balance);

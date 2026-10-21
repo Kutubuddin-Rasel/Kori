@@ -1,4 +1,4 @@
-import { WalletType } from 'src/domain/enums';
+import { Currency, WalletType } from 'src/domain/enums';
 /**
  * This file defines the interfaces for wallet-related responses and states.
  * - `WalletBalanceResponse`: Represents the response structure for a wallet balance query, including the wallet's ID, balance, type, currency, and active status.
@@ -22,4 +22,5 @@ export interface WalletStateForTransaction {
   readonly id: string;
   readonly type: WalletType;
   readonly balance: bigint;
+  readonly currency: Currency;
 }

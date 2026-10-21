@@ -57,6 +57,10 @@ enum EntryType{
   CREDIT
 }
 
+enum Currency{
+  BDT
+}
+
 model User{
   id  String  @id @default(uuid())  @db.Uuid
   phone String  @unique
@@ -89,7 +93,7 @@ model Wallet{
   isActive  Boolean @default(true)
 
   balance BigInt @default(0)
-  currency  String  @default("BDT")
+  currency  Currency  @default(BDT)
 
   //Optimistic Concurrency Control check
   version Int @default(1)
