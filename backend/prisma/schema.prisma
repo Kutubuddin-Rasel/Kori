@@ -3,6 +3,7 @@ generator client {
   output              = "../generated/prisma"
   moduleFormat        = "cjs"
   importFileExtension = "ts"
+  previewFeatures     = ["partialIndexes"]
 }
 
 datasource db {
@@ -102,6 +103,7 @@ model Wallet{
   ledgerEntries LedgerEntry[]
 
   @@index([type])
+  @@unique([type],map: "wallets_one_system_wallet_key",where:{type:"SYSTEM"})
   @@map("wallets")
 }
 
