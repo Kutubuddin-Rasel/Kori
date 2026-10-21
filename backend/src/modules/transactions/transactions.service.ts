@@ -35,6 +35,11 @@ import { Money } from 'src/domain/value-objects/money.vo';
 import { TransactionMapper } from 'src/infrastructure/prisma/mappers/transaction.mapper';
 import { WalletMapper } from 'src/infrastructure/prisma/mappers/wallet.mapper';
 import { AccountMapper } from 'src/infrastructure/prisma/mappers/account.mapper';
+import {
+  MAX_TRANSACTION_AMOUNT_DIGITS,
+  MAX_TRANSACTION_PRINCIPAL_MINOR_UNITS,
+  POSITIVE_MINOR_UNITS_PATTERN,
+} from './constants/transaction-amount.constants';
 
 /**
  * TransactionsService is responsible for handling all financial transactions in the system, including:
@@ -384,8 +389,27 @@ export class TransactionsService implements OnModuleInit {
     amountMinorUnits: string,
     type: TransactionType,
   ): TransactionAmounts {
+    if (
+      typeof amountMinorUnits !== 'string' ||
+      amountMinorUnits.length > MAX_TRANSACTION_AMOUNT_DIGITS ||
+      !POSITIVE_MINOR_UNITS_PATTERN.test(amountMinorUnits)
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_TRANSACTION_AMOUNT',
+        message: 'Invalid transaction amount.',
+      });
+    }
+
     // Calculate fee and total required amount
     const transferAmount = Money.fromMinorUnits(BigInt(amountMinorUnits));
+
+    if (transferAmount.minorUnits > MAX_TRANSACTION_PRINCIPAL_MINOR_UNITS) {
+      throw new BadRequestException({
+        code: 'TRANSACTION_AMOUNT_LIMIT_EXCEEDED',
+        message: 'Maximum principal is 100,000 BDT.',
+      });
+    }
+
     const feeAmount = calculateFee(transferAmount, type);
     const totalRequiredAmount = transferAmount.add(feeAmount);
     return {
