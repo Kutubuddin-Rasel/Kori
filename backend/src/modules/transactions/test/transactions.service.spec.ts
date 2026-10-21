@@ -4,7 +4,7 @@ import { TransactionsService } from '../transactions.service';
 import { WalletsService } from '../../wallets/wallets.service';
 import { PrismaService } from 'src/infrastructure/prisma/prisma.service';
 import { WalletType as PrismaWalletType } from 'generated/prisma/enums';
-import { WalletType } from 'src/domain/enums';
+import { Currency, WalletType } from 'src/domain/enums';
 import { UserId } from 'src/domain/value-objects/user-id.vo';
 import { WalletId } from 'src/domain/value-objects/wallet-id.vo';
 import { Prisma } from 'generated/prisma/client';
@@ -191,6 +191,7 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
             id: id.value,
             type: WalletType.PERSONAL,
             balance: 100000n,
+            currency: Currency.BDT,
           });
         },
       );
@@ -228,6 +229,7 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.PERSONAL,
               balance: 500000n,
+              currency: Currency.BDT,
             });
           }
           return Promise.reject(
@@ -270,12 +272,14 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.AGENT,
               balance: 1000000n,
+              currency: Currency.BDT,
             });
           }
           return Promise.resolve({
             id: id.value,
             type: WalletType.PERSONAL,
             balance: 10000n,
+            currency: Currency.BDT,
           });
         },
       );
@@ -351,12 +355,14 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.PERSONAL,
               balance: 500000n,
+              currency: Currency.BDT,
             });
           }
           return Promise.resolve({
             id: id.value,
             type: WalletType.AGENT,
             balance: 200000n,
+            currency: Currency.BDT,
           });
         },
       );
@@ -427,12 +433,14 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.PERSONAL,
               balance: 500000n,
+              currency: Currency.BDT,
             });
           }
           return Promise.resolve({
             id: id.value,
             type: WalletType.MERCHANT,
             balance: 300000n,
+            currency: Currency.BDT,
           });
         },
       );
@@ -504,6 +512,7 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.PERSONAL,
               balance: 500000n,
+              currency: Currency.BDT,
             });
           }
           // Merchant wallet is marked active
@@ -511,6 +520,7 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
             id: id.value,
             type: WalletType.MERCHANT,
             balance: 300000n,
+            currency: Currency.BDT,
           });
         },
       );
@@ -588,12 +598,14 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
               id: id.value,
               type: WalletType.PERSONAL,
               balance: 500000n,
+              currency: Currency.BDT,
             });
           }
           return Promise.resolve({
             id: id.value,
             type: WalletType.MERCHANT,
             balance: 300000n,
+            currency: Currency.BDT,
           });
         },
       );

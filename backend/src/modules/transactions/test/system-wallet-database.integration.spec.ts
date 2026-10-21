@@ -79,10 +79,7 @@ describe('[Integration Real PostgreSQL] SYSTEM Wallet Database Invariants', () =
     });
 
     await expect(
-      prisma.wallet.update({
-        where: { id: system.id },
-        data: { currency: 'USD' },
-      }),
+      prisma.$executeRaw`UPDATE wallets SET currency = 'USD' WHERE id = ${system.id}::uuid`,
     ).rejects.toThrow();
 
     const unchanged = await prisma.wallet.findUniqueOrThrow({
