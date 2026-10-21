@@ -17,6 +17,13 @@ interface MockLockedWallet {
   type: PrismaWalletType;
 }
 
+interface MockSystemWallet {
+  id: string;
+  userId: string | null;
+  currency: string;
+  isActive: boolean;
+}
+
 interface MockPrismaTransactionClient {
   $queryRaw: jest.Mock<
     Promise<unknown[]>,
@@ -75,9 +82,9 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
   let txMock: MockPrismaTransactionClient;
   let prismaMock: {
     wallet: {
-      findFirst: jest.Mock<
-        Promise<{ id: string } | null>,
-        [Prisma.WalletFindFirstArgs]
+      findMany: jest.Mock<
+        Promise<MockSystemWallet[]>,
+        [Prisma.WalletFindManyArgs]
       >;
     };
     $transaction: jest.Mock;
@@ -126,9 +133,16 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
 
     prismaMock = {
       wallet: {
-        findFirst: jest
-          .fn<Promise<{ id: string } | null>, [Prisma.WalletFindFirstArgs]>()
-          .mockResolvedValue({ id: systemWalletId.value }),
+        findMany: jest
+          .fn<Promise<MockSystemWallet[]>, [Prisma.WalletFindManyArgs]>()
+          .mockResolvedValue([
+            {
+              id: systemWalletId.value,
+              userId: null,
+              currency: 'BDT',
+              isActive: true,
+            },
+          ]),
       },
       $transaction: jest.fn(
         (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
@@ -665,6 +679,95 @@ describe('TransactionsService — Financial Participant Restrictions & Safety Ch
       expect(txMock.transaction.create).toHaveBeenCalled();
       expect(txMock.ledgerEntry.create).toHaveBeenCalledTimes(2); // debit and credit
       expect(txMock.wallet.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('TransactionsService — Startup System Wallet Validation (onModuleInit)', () => {
+    it('should reject initialization when system wallet query returns an empty array', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([]);
+
+      await expect(service.onModuleInit()).rejects.toThrow(
+        'Expected exactly one SYSTEM wallet, found 0.',
+      );
+    });
+
+    it('should succeed initialization when system wallet query returns exactly one valid active BDT record with no owner', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([
+        {
+          id: systemWalletId.value,
+          userId: null,
+          currency: 'BDT',
+          isActive: true,
+        },
+      ]);
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+    });
+
+    it('should reject initialization when system wallet query returns multiple records', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([
+        {
+          id: '00000000-0000-4000-8000-000000000001',
+          userId: null,
+          currency: 'BDT',
+          isActive: true,
+        },
+        {
+          id: '00000000-0000-4000-8000-000000000002',
+          userId: null,
+          currency: 'BDT',
+          isActive: true,
+        },
+      ]);
+
+      await expect(service.onModuleInit()).rejects.toThrow(
+        'Expected exactly one SYSTEM wallet, found 2.',
+      );
+    });
+
+    it('should reject initialization when system wallet has non-BDT currency USD', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([
+        {
+          id: systemWalletId.value,
+          userId: null,
+          currency: 'USD',
+          isActive: true,
+        },
+      ]);
+
+      await expect(service.onModuleInit()).rejects.toThrow(
+        'SYSTEM wallet has invalid ownership, currency, or activity state.',
+      );
+    });
+
+    it('should reject initialization when system wallet is inactive', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([
+        {
+          id: systemWalletId.value,
+          userId: null,
+          currency: 'BDT',
+          isActive: false,
+        },
+      ]);
+
+      await expect(service.onModuleInit()).rejects.toThrow(
+        'SYSTEM wallet has invalid ownership, currency, or activity state.',
+      );
+    });
+
+    it('should reject initialization when system wallet has a non-null userId owner', async () => {
+      prismaMock.wallet.findMany.mockResolvedValueOnce([
+        {
+          id: systemWalletId.value,
+          userId: customerUserId.value,
+          currency: 'BDT',
+          isActive: true,
+        },
+      ]);
+
+      await expect(service.onModuleInit()).rejects.toThrow(
+        'SYSTEM wallet has invalid ownership, currency, or activity state.',
+      );
     });
   });
 });
