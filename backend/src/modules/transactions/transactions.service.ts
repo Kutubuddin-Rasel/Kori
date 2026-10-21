@@ -170,16 +170,16 @@ export class TransactionsService implements OnModuleInit {
 
     const customerPhoneNumber = PhoneNumber.from(customerPhone);
 
-    const [agentWalletId, receiverWalletId] = await Promise.all([
-      this.walletsService.getOwnWalletId(actorUserId),
-      this.walletsService.resolveWalletIdByPhone(customerPhoneNumber),
-    ]);
-
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
     const amounts = this.calculateTransferMath(
       amountMinorUnits,
       TransactionType.CASH_IN,
     );
+
+    const [agentWalletId, receiverWalletId] = await Promise.all([
+      this.walletsService.getOwnWalletId(actorUserId),
+      this.walletsService.resolveWalletIdByPhone(customerPhoneNumber),
+    ]);
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -219,16 +219,16 @@ export class TransactionsService implements OnModuleInit {
 
     const agentPhoneNumber = PhoneNumber.from(agentPhone);
 
-    const [customerWalletId, agentWalletId] = await Promise.all([
-      this.walletsService.getOwnWalletId(actorUserId),
-      this.walletsService.resolveWalletIdByPhone(agentPhoneNumber),
-    ]);
-
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
     const amounts = this.calculateTransferMath(
       amountMinorUnits,
       TransactionType.CASH_OUT,
     );
+
+    const [customerWalletId, agentWalletId] = await Promise.all([
+      this.walletsService.getOwnWalletId(actorUserId),
+      this.walletsService.resolveWalletIdByPhone(agentPhoneNumber),
+    ]);
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
@@ -268,16 +268,16 @@ export class TransactionsService implements OnModuleInit {
 
     const merchantPhoneNumber = PhoneNumber.from(merchantPhone);
 
-    const [customerWalletId, merchantWlletId] = await Promise.all([
-      this.walletsService.getOwnWalletId(actorUserId),
-      this.walletsService.resolveWalletIdByPhone(merchantPhoneNumber),
-    ]);
-
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
     const amounts = this.calculateTransferMath(
       amountMinorUnits,
       TransactionType.PAYMENT,
     );
+
+    const [customerWalletId, merchantWlletId] = await Promise.all([
+      this.walletsService.getOwnWalletId(actorUserId),
+      this.walletsService.resolveWalletIdByPhone(merchantPhoneNumber),
+    ]);
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
