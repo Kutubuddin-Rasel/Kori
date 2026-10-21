@@ -121,16 +121,16 @@ export class TransactionsService implements OnModuleInit {
 
     const recipientPhoneNumber = PhoneNumber.from(recipientPhone);
 
-    const [senderWalletId, receiverWalletId] = await Promise.all([
-      this.walletsService.getOwnWalletId(actorUserId),
-      this.walletsService.resolveWalletIdByPhone(recipientPhoneNumber),
-    ]);
-
     // Calculate the transfer amount, fee amount, and total required amount for the transaction based on the provided amount and transaction type
     const amounts = this.calculateTransferMath(
       amountMinorUnits,
       TransactionType.SEND_MONEY,
     );
+
+    const [senderWalletId, receiverWalletId] = await Promise.all([
+      this.walletsService.getOwnWalletId(actorUserId),
+      this.walletsService.resolveWalletIdByPhone(recipientPhoneNumber),
+    ]);
 
     // Validate the transaction request and check for eligibility based on business rules, including wallet types and sufficient funds
     await this.assertTransferEligibility(
